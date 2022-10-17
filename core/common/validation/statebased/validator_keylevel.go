@@ -8,11 +8,10 @@ package statebased
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"sync"
 
 	commonerrors "github.com/hyperledger/fabric/common/errors"
-	"github.com/hyperledger/fabric/core/handlers/validation/api/policies"
+	validation "github.com/hyperledger/fabric/core/handlers/validation/api/policies"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/protos/common"
@@ -172,7 +171,7 @@ func (klv *KeyLevelValidator) extractDependenciesForTx(blockNum, txNum uint64, e
 }
 
 // PreValidate implements the function of the StateBasedValidator interface
-func (klv *KeyLevelValidator) PreValidate(txNum uint64, block *cached.Block) {
+func (klv *KeyLevelValidator) PreValidate(txNum uint64, block *common.Block) {
 	klv.blockDep.mutex.Lock()
 	if klv.blockDep.blockNum != block.Header.Number {
 		klv.blockDep.blockNum = block.Header.Number

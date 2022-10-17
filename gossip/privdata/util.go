@@ -8,7 +8,6 @@ package privdata
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -123,7 +122,7 @@ func (bf *blockFactory) AddTxnWithEndorsement(txID string, nsName string, hash [
 	return bf
 }
 
-func (bf *blockFactory) create() *cached.Block {
+func (bf *blockFactory) create() *common.Block {
 	defer func() {
 		*bf = blockFactory{channelID: bf.channelID}
 	}()
@@ -137,7 +136,7 @@ func (bf *blockFactory) create() *cached.Block {
 	}
 
 	if bf.lacksMetadata {
-		return cached.WrapBlock(block)
+		return block
 	}
 	block.Metadata = &common.BlockMetadata{
 		Metadata: make([][]byte, common.BlockMetadataIndex_TRANSACTIONS_FILTER+1),
@@ -152,7 +151,7 @@ func (bf *blockFactory) create() *cached.Block {
 		block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER][txSeqInBlock] = uint8(peer.TxValidationCode_INVALID_ENDORSER_TRANSACTION)
 	}
 
-	return cached.WrapBlock(block)
+	return block
 }
 
 func (bf *blockFactory) withoutMetadata() *blockFactory {

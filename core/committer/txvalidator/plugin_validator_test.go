@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package txvalidator_test
 
 import (
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"reflect"
 	"testing"
 
@@ -18,7 +17,7 @@ import (
 	"github.com/hyperledger/fabric/core/committer/txvalidator"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/mocks"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/testdata"
-	"github.com/hyperledger/fabric/core/handlers/validation/api"
+	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
 	. "github.com/hyperledger/fabric/core/handlers/validation/api/capabilities"
 	"github.com/hyperledger/fabric/msp"
 	. "github.com/hyperledger/fabric/msp/mocks"
@@ -108,12 +107,12 @@ func TestSamplePlugin(t *testing.T) {
 		Namespace: "mycc",
 		VSCCName:  "vscc",
 		Policy:    acceptAllPolicyBytes,
-		Block: cached.WrapBlock(&common.Block{
+		Block: &common.Block{
 			Header: &common.BlockHeader{},
 			Data: &common.BlockData{
 				Data: [][]byte{txnData},
 			},
-		}),
+		},
 		Channel: "mychannel",
 	}
 	assert.NoError(t, v.ValidateWithPlugin(ctx))

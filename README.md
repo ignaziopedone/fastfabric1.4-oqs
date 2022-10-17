@@ -1,132 +1,80 @@
 
-# FastFabric
+# Hyperledger Fabric [![join the chat][rocketchat-image]][rocketchat-url]
 
+[rocketchat-url]: https://chat.hyperledger.org/channel/fabric
+[rocketchat-image]: https://open.rocket.chat/images/join-chat.svg
 
-**Note:** This is a fork of the Hyperledger Fabric repository (https://github.com/hyperledger/fabric) and contains a more stable implementation of the FastFabric (https://ieeexplore.ieee.org/document/8751452). The original code used for the publication can be found in the `fastfabric` branch.
+[![Build Status](https://dev.azure.com/Hyperledger/Fabric/_apis/build/status/Merge?branchName=release-1.4)](https://dev.azure.com/Hyperledger/Fabric/_build/latest?definitionId=51&branchName=release-1.4)
+[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/955/badge)](https://bestpractices.coreinfrastructure.org/projects/955)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hyperledger/fabric)](https://goreportcard.com/report/github.com/hyperledger/fabric)
+[![GoDoc](https://godoc.org/github.com/hyperledger/fabric?status.svg)](https://godoc.org/github.com/hyperledger/fabric)
+[![Documentation Status](https://readthedocs.org/projects/hyperledger-fabric/badge/?version=release-1.4)](http://hyperledger-fabric.readthedocs.io/en/release-1.4/?badge=release-1.4)
 
-This is a proof of concept and not meant to be used in a production setting. Helper scripts and instructions are included to run Fabric directly from the binaries created by this repository.
+**Note:** This is a **read-only mirror** of the formal [Gerrit](https://gerrit.hyperledger.org/r/#/admin/projects/fabric) repository,
+where active development is ongoing. Issue tracking is handled in [Jira](https://jira.hyperledger.org/secure/Dashboard.jspa?selectPageId=10104).
 
+This project is an _Active_ Hyperledger project. For more information on the history of this project see the [Fabric wiki page](https://wiki.hyperledger.org/display/fabric). Information on what _Active_ entails can be found in
+the [Hyperledger Project Lifecycle document](https://wiki.hyperledger.org/display/HYP/Project+Lifecycle).
+Hyperledger Fabric is a platform for distributed ledger solutions, underpinned
+by a modular architecture delivering high degrees of confidentiality,
+resiliency, flexibility and scalability. It is designed to support pluggable
+implementations of different components, and accommodate the complexity and
+intricacies that exist across the economic ecosystem.
 
-## Prerequisites
+Hyperledger Fabric delivers a uniquely elastic and extensible architecture,
+distinguishing it from alternative blockchain solutions. Planning for the
+future of enterprise blockchain requires building on top of a fully-vetted,
+open source architecture; Hyperledger Fabric is your starting point.
 
-- The Hyperledger Fabric prerequisites are installed
-- `$GOPATH` and `$GOPATH/bin` are added to `$PATH`
+## Releases
 
+Fabric releases and release notes can be found on the [GitHub releases page](https://github.com/hyperledger/fabric/releases).
 
-## First Steps
-1. Install PQFabric
+Please visit the [Hyperledger Fabric Jira dashboard](https://jira.hyperledger.org/secure/Dashboard.jspa?selectPageId=10104) for our release roadmap.
+We plan on a quarterly release cadence, delivering on a scoped set of themes and select features.
+Unless specified otherwise, all releases will be upgradable from the prior minor release.
 
-        mkdir -p $GOPATH/src/github.com/hyperledger/
-        cd $GOPATH/src/github.com/hyperledger/
-        git clone https://github.com/ameliaholcomb/fastfabric1.4-oqs.git
+## Documentation, Getting Started and Developer Guides
 
-2. Make directories for Hyperledger artifacts and the new binaries you are about to build
+Please visit our
+online documentation for
+information on getting started using and developing with the fabric, SDK and chaincode:
+- [v1.4](http://hyperledger-fabric.readthedocs.io/en/release-1.4/)
+- [v1.3](http://hyperledger-fabric.readthedocs.io/en/release-1.3/)
+- [v1.2](http://hyperledger-fabric.readthedocs.io/en/release-1.2/)
+- [v1.1](http://hyperledger-fabric.readthedocs.io/en/release-1.1/)
+- [v1.0](http://hyperledger-fabric.readthedocs.io/en/release-1.0/)
+- [master branch (development)](http://hyperledger-fabric.readthedocs.io/en/master/)
 
-        mkdir -p $GOPATH/src/github.com/hyperledger/fabric/.build/bin
-        sudo mkdir -p -m777 /var/hyperledger/production
+It's recommended for first-time users to begin by going through the Getting Started section of the documentation in order to gain familiarity with the Hyperledger Fabric components and the basic transaction flow.
 
-## OQS-Specific instructions
-To run quantum-safe hyperledger, perform the following steps.
-(Tested on Ubuntu 16.04, golang 1.13, C++21)
+## Contributing
 
+We welcome contributions to the Hyperledger Fabric project in many forms.
+There’s always plenty to do! Check [the documentation on how to contribute to this project](http://hyperledger-fabric.readthedocs.io/en/latest/CONTRIBUTING.html)
+for the full details.
 
-1. Install liboqs 0.4.0. You can read the full instructions [here](https://github.com/open-quantum-safe/liboqs/tree/0.4.0/README.md).
-I have copied the details for Ubuntu below with appropriate flags:
+## Testing
+Check [the documentation](testingInfo.rst) for information on the testing structure that the project follows.
 
-        sudo apt install cmake gcc ninja-build libssl-dev python3-pytest unzip xsltproc doxygen graphviz
-        git clone -b master https://github.com/open-quantum-safe/liboqs.git
-        cd liboqs
-        git checkout tags/0.4.0
-    
-Configure and build:
+## Community
 
-        mkdir build && cd build
-        cmake -GNinja -DBUILD_SHARED_LIBS=ON
-        ninja
+[Hyperledger Community](https://www.hyperledger.org/community)
 
-Currently, the libdir and includedir flags aren't working for me. Instead, after running
-the `make` command, I copy `liboqs/.libs/*` and `liboqs/include/*` into `/usr/local/lib`
- and `/usr/local/include`, respectively.
- 
-        sudo cp -a liboqs/.libs/* /usr/local/lib
-        sudo cp -a liboqs/include/* /usr/local/include
+[Hyperledger mailing lists and archives](http://lists.hyperledger.org/)
 
-1. Help Go find the shared library:
+[Hyperledger Chat](http://chat.hyperledger.org/channel/fabric)
 
-        export PATH=$PATH:/usr/local/lib
-        sudo ldconfig
-        
-1. Run the following commands to build executables that can create a quantum-safe hybrid crypto config.
-Do not use the cryptogen and configtxgen executables from another source. 
+[Hyperledger Fabric Issue Tracking (JIRA)](https://jira.hyperledger.org/secure/Dashboard.jspa?selectPageId=10104)
 
-        cd hyperledger/fabric/common/tools/cryptogen && go build
-        cd hyperledger/fabric/common/tools/configtxgen && go build
-        cd $GOPATH/src/github.com/hyperledger/fabric
-        mkdir -r .build/bin
-        mv common/tools/cryptogen/cryptogen .build/bin
-        mv common/tools/configtxgen/configtxgen .build/bin
+[Hyperledger Fabric Wiki](https://wiki.hyperledger.org/display/Fabric)
 
-## Stop and Test
-At this stage, you should try running a few unit tests to make sure everything is correctly set up.
+[Hyperledger Wiki](https://wiki.hyperledger.org/)
 
-- Test that the OQS library is installed correctly and Fabric can use it through its go wrapper.
+[Hyperledger Code of Conduct](https://wiki.hyperledger.org/display/HYP/Hyperledger+Code+of+Conduct)
 
-        cd $GOPATH/src/hyperledger/fabric/
-        go test -v external_crypto/
+[Community Calendar](https://wiki.hyperledger.org/display/HYP/Calendar+of+Public+Meetings)
 
-## Network Setup Instructions
+## License <a name="license"></a>
 
-Now you can set up a local hyperledger blockchain.
-All following steps use scripts from the  `fabric/fastfabric/scripts` folder.
-- Fill in the values for the variables in `custom_parameters.sh` based on the comments in the file.
-  For example, to run on a single server on localhost, the file would look like:
-  
-      export PEER_DOMAIN="local"
-      export FAST_PEER_ADDRESS="localhost"
-      export ENDORSER_ADDRESS=""
-      export STORAGE_ADDRESS=""
-      export ORDERER_DOMAIN="local"
-      export ORDERER_ADDRESS="localhost"
-      
-- Run `create_artifacts.sh` to create the prerequisite files to setup the network, channel and anchor peer.
-- For the following steps it is advised to run them in different terminals or use `tmux`.
-    - Run `run_orderer.sh` on the respective server that should form the ordering service
-    - Run `run_endorser.sh` on any server that should act as a decoupled endorser
-    - Run `run_fastpeer.sh` on the server that should validate incoming blocks
-    - Run `channel_setup.sh` on any server in the network.
-    - Run `chaincode_setup.sh` on any server in the network. If you want to install different chaincode, modify the script accordingly. The command should have the form `./chaincode_setup.sh [lower limit of account index range] [upper limit of account index range] [value per account]`. Example: `./chaincode_setup.sh 0 10 100`
-
-This should set up an orderer in solo mode, one or more endorsers, a persistent storage peer and fast validation peer. **Important:** Sometimes it takes a few seconds after `channel_setup.sh` for the peers to properly set up a gossip network and as a result the `chaincode_setup.sh` might fail. In this case wait a short while and try to run it again.
-
-For a test you can run `test_chaincode [any endorser server]` to move 10 coins form `account0` to `account1`. Example: `./test_chaincode localhost`
-
-To shut down all Fabric nodes run `terminate_benchmark.sh`
-
-## Fabric Client Instructions
-All following steps use scripts from the  `fabric/fastfabric/scripts/client` folder, and the commands are assumed to be run from that folder.
-
-- Create the environment variables needed based on the custom parameters set above.
-
-        source ../base_parameters.sh
-        source ../custom_parameters.sh
-
-- Run `node addToWallet.js` to copy the necessary user credentials from the `crypto-config` folder into the `wallet` folder.
-- Compile either the `invoke.ts` (a client that endorses and submits transactions in one go) or `invoke2.ts` script (a client that first caches all endorsements before submitting them in bulk to the ordering service) to Javascript (change the `include` line in `tsconfig.json`). See https://code.visualstudio.com/docs/typescript/typescript-compiling for help.
-- Depending on your choice modify `run_benchmark.sh` to either run `invoke.ts` or `invoke2.ts`. Run it with the command `./run_benchmark.sh [lower thread index] [upper thread index exclusive] [total thread count] [endorser addr] [number of touched accounts] [percentage of contentious txs]`. This allows to create multiple client threads on multiple servers (wherever this script is executed), to generate load.
-Example: `./run_benchmark.sh 0 10 50 localhost 20000 70`. This spawns 10 threads on this server (and expects that the script is run on other servers to spawn 40 more threads) and calls an endorser on localhost to endorse the transactions. Because only a fifth of the total threads are spawned by this script, only the first fifth of the accounts are touched, in this case `account0` to `account3999` for a total of 2000 transactions. There is a 70% chance that any generated transaction touches `account0` and `account1` instead of a previously untouched pair to simulate a transaction conflict.  
-
-## Possible Errors and Remedies
-- Compilation errors when building cryptogen that reference type mismatches in external_crypto/oqs.go:
-Check that liboqs was built at the right version (0.4.0). Check that golang is at the right version (1.13).
-If cryptogen has errors when running (in create_artifacts.sh), run 
-
-        go test -v external_crypto/
-    to understand if the OQS wrapper is working correctly, and whether the errors affect all algorithms or just some.
-
-- Docker permission errors when running chaincode_setup: Make sure the docker group has the appropriate permissions.
-
-        sudo usermod -aG docker ${USER}
-        newgrp docker
-        
-
-
+Hyperledger Project source code files are made available under the Apache License, Version 2.0 (Apache-2.0), located in the [LICENSE](LICENSE) file. Hyperledger Project documentation files are made available under the Creative Commons Attribution 4.0 International License (CC-BY-4.0), available at http://creativecommons.org/licenses/by/4.0/.

@@ -91,6 +91,8 @@ type Gossip struct {
 	AliveTimeInterval          time.Duration   `yaml:"aliveTimeInterval,omitempty"`
 	AliveExpirationTimeout     time.Duration   `yaml:"aliveExpirationTimeout,omitempty"`
 	ReconnectInterval          time.Duration   `yaml:"reconnectInterval,omitempty"`
+	MsgExpirationFactor        int             `yaml:"msgExpirationFactor,omitempty"`
+	MaxConnectionAttempts      int             `yaml:"maxConnectionAttempts,omitempty"`
 	ExternalEndpoint           string          `yaml:"externalEndpoint,omitempty"`
 	Election                   *GossipElection `yaml:"election,omitempty"`
 	PvtData                    *GossipPvtData  `yaml:"pvtData,omitempty"`
@@ -144,11 +146,20 @@ type Authentication struct {
 type BCCSP struct {
 	Default string            `yaml:"Default,omitempty"`
 	SW      *SoftwareProvider `yaml:"SW,omitempty"`
+	PKCS11  *PKCS11           `yaml:"PKCS11,omitempty"`
 }
 
 type SoftwareProvider struct {
 	Hash     string `yaml:"Hash,omitempty"`
 	Security int    `yaml:"Security,omitempty"`
+}
+
+type PKCS11 struct {
+	Hash     string `yaml:"Hash,omitempty"`
+	Security int    `yaml:"Security,omitempty"`
+	Pin      string `yaml:"Pin,omitempty"`
+	Label    string `yaml:"Label,omitempty"`
+	Library  string `yaml:"Library,omitempty"`
 }
 
 type DeliveryClient struct {

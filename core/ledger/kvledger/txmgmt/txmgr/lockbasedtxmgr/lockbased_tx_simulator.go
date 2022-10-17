@@ -7,6 +7,7 @@ package lockbasedtxmgr
 
 import (
 	"fmt"
+
 	commonledger "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"

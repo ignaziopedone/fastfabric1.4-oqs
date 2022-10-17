@@ -30,6 +30,7 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/raft/raftpb"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -74,7 +75,13 @@ func TestIsConsenterOfChannel(t *testing.T) {
 		"BQUFBQUFBQUFBQUFBQUFBQUFBQUFCTUFvR0NDcUdTTTQ5QkFNQ0EwY0FNRVFDCklFckJZRFVzV0JwOHB0ZVFSaTZyNjNVelhJQi81Sn" +
 		"YxK0RlTkRIUHc3aDljQWlCakYrM3V5TzBvMEdRclB4MEUKUWptYlI5T3BVREN2LzlEUkNXWU9GZitkVlE9PQotLS0tLUVORCBDRVJUSU" +
 		"ZJQ0FURS0tLS0tCg==")
-	assert.NoError(t, err)
+	require.NoError(t, err)
+
+	ca, err := tlsgen.NewCA()
+	require.NoError(t, err)
+
+	kp, err := ca.NewClientCertKeyPair()
+	require.NoError(t, err)
 
 	validBlock := func() *common.Block {
 		b, err := ioutil.ReadFile(filepath.Join("testdata", "etcdraftgenesis.block"))
@@ -92,18 +99,24 @@ func TestIsConsenterOfChannel(t *testing.T) {
 	}{
 		{
 			name:          "nil block",
-			expectedError: "nil block",
+			expectedError: "nil block or nil header",
+		},
+		{
+			name:          "nil header",
+			expectedError: "nil block or nil header",
+			configBlock:   &common.Block{},
 		},
 		{
 			name:          "no block data",
 			expectedError: "block data is nil",
-			configBlock:   &common.Block{},
+			configBlock:   &common.Block{Header: &common.BlockHeader{}},
 		},
 		{
 			name: "invalid envelope inside block",
 			expectedError: "failed to unmarshal payload from envelope:" +
 				" error unmarshaling Payload: proto: common.Payload: illegal tag 0 (wire type 1)",
 			configBlock: &common.Block{
+				Header: &common.BlockHeader{},
 				Data: &common.BlockData{
 					Data: [][]byte{utils.MarshalOrPanic(&common.Envelope{
 						Payload: []byte{1, 2, 3},
@@ -114,7 +127,7 @@ func TestIsConsenterOfChannel(t *testing.T) {
 		{
 			name:          "valid config block with cert mismatch",
 			configBlock:   validBlock(),
-			certificate:   certInsideConfigBlock[2:],
+			certificate:   kp.Cert,
 			expectedError: cluster.ErrNotInChannel.Error(),
 		},
 		{
@@ -124,7 +137,11 @@ func TestIsConsenterOfChannel(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := ConsenterCertificate(testCase.certificate).IsConsenterOfChannel(testCase.configBlock)
+			consenterCertificate := &ConsenterCertificate{
+				Logger:               flogging.MustGetLogger("test"),
+				ConsenterCertificate: testCase.certificate,
+			}
+			err = consenterCertificate.IsConsenterOfChannel(testCase.configBlock)
 			if testCase.expectedError != "" {
 				assert.EqualError(t, err, testCase.expectedError)
 			} else {
@@ -313,11 +330,18 @@ func TestPeriodicCheck(t *testing.T) {
 		reports <- duration
 	}
 
+	clears := make(chan struct{}, 1000)
+
+	reportCleared := func() {
+		clears <- struct{}{}
+	}
+
 	check := &PeriodicCheck{
 		Logger:        flogging.MustGetLogger("test"),
 		Condition:     condition,
 		CheckInterval: time.Millisecond,
 		Report:        report,
+		ReportCleared: reportCleared,
 	}
 
 	go check.Run()
@@ -350,6 +374,9 @@ func TestPeriodicCheck(t *testing.T) {
 		}
 	}
 
+	g.Eventually(clears).Should(gomega.Receive())
+	g.Consistently(clears).ShouldNot(gomega.Receive())
+
 	// ensure the checks have been made
 	checksDoneSoFar := atomic.LoadUint32(&checkNum)
 	g.Consistently(reports, time.Second*2, time.Millisecond).Should(gomega.BeEmpty())
@@ -372,6 +399,7 @@ func TestPeriodicCheck(t *testing.T) {
 	time.Sleep(check.CheckInterval * 50)
 	// Ensure that we cease checking the condition, hence the PeriodicCheck is stopped.
 	g.Expect(atomic.LoadUint32(&checkNum)).To(gomega.BeNumerically("<", checkCountAfterStop+2))
+	g.Consistently(clears).ShouldNot(gomega.Receive())
 }
 
 func TestEvictionSuspector(t *testing.T) {
@@ -401,10 +429,17 @@ func TestEvictionSuspector(t *testing.T) {
 		blockPullerErr              error
 		height                      uint64
 		halt                        func()
+		timesTriggered              int
 	}{
 		{
 			description:                "suspected time is lower than threshold",
 			evictionSuspicionThreshold: 11 * time.Minute,
+			halt:                       t.Fail,
+		},
+		{
+			description:                "timesTriggered multiplier prevents threshold",
+			evictionSuspicionThreshold: 6 * time.Minute,
+			timesTriggered:             1,
 			halt:                       t.Fail,
 		},
 		{
@@ -482,6 +517,7 @@ func TestEvictionSuspector(t *testing.T) {
 				},
 				logger:         flogging.MustGetLogger("test"),
 				triggerCatchUp: func(sn *raftpb.Snapshot) { return },
+				timesTriggered: testCase.timesTriggered,
 			}
 
 			foundExpectedLog := testCase.expectedLog == ""

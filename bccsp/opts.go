@@ -56,11 +56,6 @@ const (
 	// AES Advanced Encryption Standard at 256 bit security level
 	AES256 = "AES256"
 
-	// Quantum-safe encryption algorithm
-	// The key object itself encodes the algorithm, in order to make the code interoperable
-	// while different quantum-safe algorithms are still under consideration.
-	QS = "QS"
-
 	// HMAC keyed-hash message authentication code
 	HMAC = "HMAC"
 	// HMACTruncated256 HMAC truncated at 256 bits.
@@ -174,55 +169,6 @@ func (opts *ECDSAReRandKeyOpts) Ephemeral() bool {
 // ExpansionValue returns the re-randomization factor
 func (opts *ECDSAReRandKeyOpts) ExpansionValue() []byte {
 	return opts.Expansion
-}
-
-// OQSKeyGenOpts contains options for OQS key generation
-type OQSKeyGenOpts struct {
-	Temporary bool
-	SignatureScheme string
-}
-
-// Algorithm returns the key generation algorithm identifier.
-func (opts *OQSKeyGenOpts) Algorithm() string {
-	return opts.SignatureScheme
-}
-
-// Ephemeral returns true if the key to generate has to be ephemeral,
-// false otherwise.
-func (opts *OQSKeyGenOpts) Ephemeral() bool {
-	return opts.Temporary
-}
-
-// OQSPublicKeyImportOpts contains options for OQS public key importation in DER format
-type OQSPublicKeyImportOpts struct {
-	Temporary bool
-}
-
-// Algorithm returns the key generation algorithm identifier (to be used).
-func (opts *OQSPublicKeyImportOpts) Algorithm() string {
-	return QS
-}
-
-// Ephemeral returns true if the key to generate has to be ephemeral,
-// false otherwise.
-func (opts *OQSPublicKeyImportOpts) Ephemeral() bool {
-	return opts.Temporary
-}
-
-// OQSGoPublicKeyImportOpts contains options for OQS public key importation in go oqs struct format.
-type OQSGoPublicKeyImportOpts struct {
-	Temporary bool
-}
-
-// Algorithm returns the key generation algorithm identifier (to be used).
-func (opts *OQSGoPublicKeyImportOpts) Algorithm() string {
-	return QS
-}
-
-// Ephemeral returns true if the key to generate has to be ephemeral,
-// false otherwise.
-func (opts *OQSGoPublicKeyImportOpts) Ephemeral() bool {
-	return opts.Temporary
 }
 
 // AESKeyGenOpts contains options for AES key generation at default security level
@@ -343,7 +289,7 @@ func (opts *RSAKeyGenOpts) Ephemeral() bool {
 	return opts.Temporary
 }
 
-// ECDSAGoPublicKeyImportOpts contains options for RSA key importation from rsa.PublicKey
+// RSAGoPublicKeyImportOpts contains options for RSA key importation from rsa.PublicKey
 type RSAGoPublicKeyImportOpts struct {
 	Temporary bool
 }
@@ -372,24 +318,5 @@ func (opts *X509PublicKeyImportOpts) Algorithm() string {
 // Ephemeral returns true if the key to generate has to be ephemeral,
 // false otherwise.
 func (opts *X509PublicKeyImportOpts) Ephemeral() bool {
-	return opts.Temporary
-}
-
-// X509AltPublicKeyImportOpts contains options for importing alternate public keys
-// (eg, quantum-safe public keys, as in https://tools.ietf.org/id/draft-truskovsky-lamps-pq-hybrid-x509-00.html)
-// from an X509 certificate
-type X509AltPublicKeyImportOpts struct {
-	Temporary bool
-}
-
-// Algorithm returns the key importation algorithm identifier (to be used).
-func (opts *X509AltPublicKeyImportOpts) Algorithm() string {
-	// TODO(amelia): Is this right?
-	return X509Certificate
-}
-
-// Ephemeral returns true if the key to generate has to be ephemeral,
-// false otherwise.
-func (opts *X509AltPublicKeyImportOpts) Ephemeral() bool {
 	return opts.Temporary
 }

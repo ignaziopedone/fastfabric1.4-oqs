@@ -7,11 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package etcdraft
 
 import (
-	"bytes"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +17,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
+	"github.com/hyperledger/fabric/common/crypto"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/orderer/common/cluster"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
@@ -356,7 +355,7 @@ func ConsensusMetadataFromConfigBlock(block *common.Block) (*etcdraft.ConfigMeta
 		return nil, errors.New("nil block")
 	}
 
-	if !utils.IsConfigBlock(cached.WrapBlock(block)) {
+	if !utils.IsConfigBlock(block) {
 		return nil, errors.New("not a config block")
 	}
 
@@ -445,14 +444,19 @@ func validateCert(pemData []byte, certRole string) error {
 }
 
 // ConsenterCertificate denotes a TLS certificate of a consenter
-type ConsenterCertificate []byte
+type ConsenterCertificate struct {
+	ConsenterCertificate []byte
+	Logger               *flogging.FabricLogger
+}
+
+// type ConsenterCertificate []byte
 
 // IsConsenterOfChannel returns whether the caller is a consenter of a channel
 // by inspecting the given configuration block.
 // It returns nil if true, else returns an error.
 func (conCert ConsenterCertificate) IsConsenterOfChannel(configBlock *common.Block) error {
-	if configBlock == nil {
-		return errors.New("nil block")
+	if configBlock == nil || configBlock.Header == nil {
+		return errors.New("nil block or nil header")
 	}
 	envelopeConfig, err := utils.ExtractEnvelope(configBlock, 0)
 	if err != nil {
@@ -471,11 +475,38 @@ func (conCert ConsenterCertificate) IsConsenterOfChannel(configBlock *common.Blo
 		return err
 	}
 
+	bl, _ := pem.Decode(conCert.ConsenterCertificate)
+	if bl == nil {
+		return errors.Errorf("my consenter certificate %s is not a valid PEM", string(conCert.ConsenterCertificate))
+	}
+
+	myCertDER := bl.Bytes
+
+	var failedMatches []string
 	for _, consenter := range m.Consenters {
-		if bytes.Equal(conCert, consenter.ServerTlsCert) || bytes.Equal(conCert, consenter.ClientTlsCert) {
+		candidateBlock, _ := pem.Decode(consenter.ServerTlsCert)
+		if candidateBlock == nil {
+			return errors.Errorf("candidate server certificate %s is not a valid PEM", string(consenter.ServerTlsCert))
+		}
+		sameServerCertErr := crypto.CertificatesWithSamePublicKey(myCertDER, candidateBlock.Bytes)
+
+		candidateBlock, _ = pem.Decode(consenter.ClientTlsCert)
+		if candidateBlock == nil {
+			return errors.Errorf("candidate client certificate %s is not a valid PEM", string(consenter.ClientTlsCert))
+		}
+		sameClientCertErr := crypto.CertificatesWithSamePublicKey(myCertDER, candidateBlock.Bytes)
+
+		if sameServerCertErr == nil || sameClientCertErr == nil {
 			return nil
 		}
+		conCert.Logger.Debugf("I am not %s:%d because %s, %s", consenter.Host, consenter.Port, sameServerCertErr, sameClientCertErr)
+		failedMatches = append(failedMatches, string(consenter.ClientTlsCert))
 	}
+	conCert.Logger.Debugf("Failed matching our certificate %s against certificates encoded in config block %d: %v",
+		string(conCert.ConsenterCertificate),
+		configBlock.Header.Number,
+		failedMatches)
+
 	return cluster.ErrNotInChannel
 }
 
@@ -526,6 +557,7 @@ type PeriodicCheck struct {
 	CheckInterval       time.Duration
 	Condition           func() bool
 	Report              func(cumulativePeriod time.Duration)
+	ReportCleared       func()
 	conditionHoldsSince time.Time
 	once                sync.Once // Used to prevent double initialization
 	stopped             uint32
@@ -560,6 +592,9 @@ func (pc *PeriodicCheck) check() {
 }
 
 func (pc *PeriodicCheck) conditionNotFulfilled() {
+	if pc.ReportCleared != nil && !pc.conditionHoldsSince.IsZero() {
+		pc.ReportCleared()
+	}
 	pc.conditionHoldsSince = time.Time{}
 }
 
@@ -597,12 +632,19 @@ type evictionSuspector struct {
 	writeBlock                 func(block *common.Block) error
 	triggerCatchUp             func(sn *raftpb.Snapshot)
 	halted                     bool
+	timesTriggered             int
+}
+
+func (es *evictionSuspector) clearSuspicion() {
+	es.timesTriggered = 0
 }
 
 func (es *evictionSuspector) confirmSuspicion(cumulativeSuspicion time.Duration) {
-	if es.evictionSuspicionThreshold > cumulativeSuspicion || es.halted {
+	// The goal here is to only execute the body of the function once every es.evictionSuspicionThreshold
+	if es.evictionSuspicionThreshold*time.Duration(1+es.timesTriggered) > cumulativeSuspicion || es.halted {
 		return
 	}
+	es.timesTriggered++
 	es.logger.Infof("Suspecting our own eviction from the channel for %v", cumulativeSuspicion)
 	puller, err := es.createPuller()
 	if err != nil {

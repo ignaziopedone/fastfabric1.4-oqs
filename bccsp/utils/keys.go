@@ -26,7 +26,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	oqs "github.com/hyperledger/fabric/external_crypto"
 )
 
 // struct to hold info required for PKCS#8
@@ -143,22 +142,8 @@ func PrivateKeyToPEM(privateKey interface{}, pwd []byte) ([]byte, error) {
 				Bytes: raw,
 			},
 		), nil
-	case *oqs.SecretKey:
-		if k == nil {
-			return nil, errors.New("Invalid oqs private key. It must be different from nil.")
-		}
-		raw, err := oqs.MarshalPKIXPrivateKey(k)
-		if err != nil {
-			return nil, err
-		}
-		return pem.EncodeToMemory(
-			&pem.Block{
-				Type:  "OQS PRIVATE KEY",
-				Bytes: raw,
-			},
-		), nil
 	default:
-		return nil, errors.New("Invalid key type. It must be *ecdsa.PrivateKey, *rsa.PrivateKey, or *oqs.PrivateKey")
+		return nil, errors.New("Invalid key type. It must be *ecdsa.PrivateKey or *rsa.PrivateKey")
 	}
 }
 
@@ -217,11 +202,7 @@ func DERToPrivateKey(der []byte) (key interface{}, err error) {
 		return
 	}
 
-	if key, err = oqs.ParsePKIXPrivateKey(der); err == nil {
-		return
-	}
-
-	return nil, errors.New("Invalid key type. The DER must contain {rsa|ecdsa|oqs}.PrivateKey")
+	return nil, errors.New("Invalid key type. The DER must contain an rsa.PrivateKey or ecdsa.PrivateKey")
 }
 
 // PEMtoPrivateKey unmarshals a pem to private key
@@ -354,22 +335,9 @@ func PublicKeyToPEM(publicKey interface{}, pwd []byte) ([]byte, error) {
 				Bytes: PubASN1,
 			},
 		), nil
-	case *oqs.PublicKey:
-		if k == nil {
-			return nil, errors.New("Invalid oqs public key. It must be different from nil.")
-		}
-		PubASN1, err := oqs.MarshalPKIXPublicKey(k)
-		if err != nil {
-			return nil, err
-		}
-		return pem.EncodeToMemory(
-			&pem.Block{
-				Type: "OQS PUBLIC KEY",
-				Bytes: PubASN1,
-			},
-		), nil
+
 	default:
-		return nil, errors.New("Invalid key type. It must be *ecdsa.PublicKey, *rsa.PublicKey or *oqs.PublicKey")
+		return nil, errors.New("Invalid key type. It must be *ecdsa.PublicKey or *rsa.PublicKey")
 	}
 }
 
@@ -485,12 +453,7 @@ func DERToPublicKey(raw []byte) (pub interface{}, err error) {
 		return nil, errors.New("Invalid DER. It must be different from nil.")
 	}
 
-	// Try parsing as an OQS key first
-	if key, err := oqs.ParsePKIXPublicKey(raw); err == nil {
-		return key, err
-	}
 	key, err := x509.ParsePKIXPublicKey(raw)
 
 	return key, err
 }
-

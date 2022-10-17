@@ -10,7 +10,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	common2 "github.com/hyperledger/fabric/protos/common"
 	"math/rand"
 	"reflect"
 	"runtime"
@@ -63,7 +62,6 @@ var tests = []func(t *testing.T){
 func init() {
 	util.SetupTestLogging()
 	rand.Seed(int64(time.Now().Second()))
-	discovery.SetMaxConnAttempts(5)
 	for range tests {
 		testWG.Add(1)
 	}
@@ -76,6 +74,8 @@ var discoveryConfig = discovery.DiscoveryConfig{
 	AliveExpirationTimeout:       10 * aliveTimeInterval,
 	AliveExpirationCheckInterval: aliveTimeInterval,
 	ReconnectInterval:            aliveTimeInterval,
+	MaxConnectionAttempts:        5,
+	MsgExpirationFactor:          discovery.DefMsgExpirationFactor,
 }
 
 var expirationTimes map[string]time.Time = map[string]time.Time{}
@@ -191,7 +191,7 @@ func (*naiveCryptoService) GetPKIidOfCert(peerIdentity api.PeerIdentityType) com
 
 // VerifyBlock returns nil if the block is properly signed,
 // else returns error
-func (*naiveCryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock *common2.Block) error {
+func (*naiveCryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock []byte) error {
 	return nil
 }
 
@@ -264,10 +264,12 @@ func newGossipInstanceWithGrpcMcsMetrics(id int, port int, gRPCServer *corecomm.
 		AliveExpirationTimeout:       discoveryConfig.AliveExpirationTimeout,
 		AliveExpirationCheckInterval: discoveryConfig.AliveExpirationCheckInterval,
 		ReconnectInterval:            discoveryConfig.ReconnectInterval,
+		MaxConnectionAttempts:        discoveryConfig.MaxConnectionAttempts,
+		MsgExpirationFactor:          discoveryConfig.MsgExpirationFactor,
 	}
 	selfID := api.PeerIdentityType(conf.InternalEndpoint)
 	g := NewGossipService(conf, gRPCServer.Server(), &orgCryptoService{}, mcs, selfID,
-		secureDialOpts, metrics)
+		secureDialOpts, metrics, nil)
 	go func() {
 		gRPCServer.Start()
 	}()
@@ -314,10 +316,12 @@ func newGossipInstanceWithGRPCWithOnlyPull(id int, port int, gRPCServer *corecom
 		AliveExpirationTimeout:       discoveryConfig.AliveExpirationTimeout,
 		AliveExpirationCheckInterval: discoveryConfig.AliveExpirationCheckInterval,
 		ReconnectInterval:            discoveryConfig.ReconnectInterval,
+		MaxConnectionAttempts:        discoveryConfig.MaxConnectionAttempts,
+		MsgExpirationFactor:          discoveryConfig.MsgExpirationFactor,
 	}
 	selfID := api.PeerIdentityType(conf.InternalEndpoint)
 	g := NewGossipService(conf, gRPCServer.Server(), &orgCryptoService{}, mcs, selfID,
-		secureDialOpts, metrics)
+		secureDialOpts, metrics, nil)
 	go func() {
 		gRPCServer.Start()
 	}()
@@ -1518,7 +1522,8 @@ func createDataMsg(seqnum uint64, data []byte, channel common.ChainID) *proto.Go
 		Content: &proto.GossipMessage_DataMsg{
 			DataMsg: &proto.DataMessage{
 				Payload: &proto.Payload{
-					Data: &common2.Block{Header: &common2.BlockHeader{Number: seqnum}},
+					Data:   data,
+					SeqNum: seqnum,
 				},
 			},
 		},

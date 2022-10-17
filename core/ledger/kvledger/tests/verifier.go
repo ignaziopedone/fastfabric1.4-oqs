@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package tests
 
 import (
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
@@ -15,6 +14,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	lgrutil "github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	protopeer "github.com/hyperledger/fabric/protos/peer"
 	"github.com/stretchr/testify/assert"
@@ -51,6 +51,15 @@ func (v *verifier) verifyPubState(ns, key string, expectedVal string) {
 		expectedValBytes = []byte(expectedVal)
 	}
 	v.assert.Equal(expectedValBytes, committedVal)
+}
+
+func (v *verifier) verifyPvtdataHashState(ns, coll, key string, expectedValHash []byte) {
+	qe, err := v.lgr.NewQueryExecutor()
+	v.assert.NoError(err)
+	defer qe.Done()
+	committedValHash, err := qe.GetPrivateDataHash(ns, coll, key)
+	v.assert.NoError(err)
+	v.assert.Equal(expectedValHash, committedValHash)
 }
 
 func (v *verifier) verifyPvtState(ns, coll, key string, expectedVal string) {
@@ -116,6 +125,23 @@ func (v *verifier) verifyTxValidationCode(txid string, expectedCode protopeer.Tx
 	tran, err := v.lgr.GetTransactionByID(txid)
 	v.assert.NoError(err)
 	v.assert.Equal(int32(expectedCode), tran.ValidationCode)
+}
+
+func (v *verifier) verifyHistory(ns, key string, expectedVals []string) {
+	hqe, err := v.lgr.NewHistoryQueryExecutor()
+	v.assert.NoError(err)
+	itr, err := hqe.GetHistoryForKey(ns, key)
+	v.assert.NoError(err)
+	historyValues := []string{}
+	for {
+		result, err := itr.Next()
+		v.assert.NoError(err)
+		if result == nil {
+			break
+		}
+		historyValues = append(historyValues, string(result.(*queryresult.KeyModification).GetValue()))
+	}
+	v.assert.Equal(expectedVals, historyValues)
 }
 
 func (v *verifier) verifyCommitHashExists() {
@@ -189,12 +215,12 @@ func (r *retrievedBlockAndPvtdata) pvtdataShouldNotContain(ns, coll string) {
 	}
 }
 
-func (r *retrievedBlockAndPvtdata) sameBlockHeaderAndData(expectedBlock *cached.Block) {
+func (r *retrievedBlockAndPvtdata) sameBlockHeaderAndData(expectedBlock *common.Block) {
 	r.assert.True(proto.Equal(expectedBlock.Data, r.BlockAndPvtData.Block.Data))
 	r.assert.True(proto.Equal(expectedBlock.Header, r.BlockAndPvtData.Block.Header))
 }
 
-func (r *retrievedBlockAndPvtdata) sameMetadata(expectedBlock *cached.Block) {
+func (r *retrievedBlockAndPvtdata) sameMetadata(expectedBlock *common.Block) {
 	// marshalling/unmarshalling treats a nil byte and empty byte interchangeably (based on which scheme is chosen proto vs gob)
 	// so explicitly comparing each metadata
 	retrievedMetadata := r.Block.Metadata.Metadata

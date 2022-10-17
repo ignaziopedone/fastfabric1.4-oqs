@@ -7,9 +7,9 @@ package stateleveldb
 
 import (
 	"bytes"
-	ffstatedb "github.com/hyperledger/fabric/fastfabric/statedb"
 
 	"github.com/hyperledger/fabric/common/flogging"
+	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
@@ -25,15 +25,15 @@ var savePointKey = []byte{0x00}
 
 // VersionedDBProvider implements interface VersionedDBProvider
 type VersionedDBProvider struct {
-	dbProvider *ffstatedb.Provider
+	dbProvider *leveldbhelper.Provider
 }
 
 // NewVersionedDBProvider instantiates VersionedDBProvider
 func NewVersionedDBProvider() *VersionedDBProvider {
 	dbPath := ledgerconfig.GetStateLevelDBPath()
 	logger.Debugf("constructing VersionedDBProvider dbPath=%s", dbPath)
-	return &VersionedDBProvider{dbProvider: ffstatedb.NewProvider(dbPath)}
-
+	dbProvider := leveldbhelper.NewProvider(&leveldbhelper.Conf{DBPath: dbPath})
+	return &VersionedDBProvider{dbProvider}
 }
 
 // GetDBHandle gets the handle to a named database
@@ -48,12 +48,12 @@ func (provider *VersionedDBProvider) Close() {
 
 // VersionedDB implements VersionedDB interface
 type versionedDB struct {
-	db     *ffstatedb.DBHandle
+	db     *leveldbhelper.DBHandle
 	dbName string
 }
 
 // newVersionedDB constructs an instance of VersionedDB
-func newVersionedDB(db *ffstatedb.DBHandle, dbName string) *versionedDB {
+func newVersionedDB(db *leveldbhelper.DBHandle, dbName string) *versionedDB {
 	return &versionedDB{db, dbName}
 }
 
@@ -166,7 +166,7 @@ func (vdb *versionedDB) ExecuteQueryWithMetadata(namespace, query string, metada
 
 // ApplyUpdates implements method in VersionedDB interface
 func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version.Height) error {
-	dbBatch := ffstatedb.NewUpdateBatch()
+	dbBatch := leveldbhelper.NewUpdateBatch()
 	namespaces := batch.GetUpdatedNamespaces()
 	for _, ns := range namespaces {
 		updates := batch.GetUpdates(ns)

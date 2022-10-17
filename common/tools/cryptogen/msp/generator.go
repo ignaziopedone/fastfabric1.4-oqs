@@ -9,19 +9,16 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
-	"github.com/hyperledger/fabric/bccsp"
-	"github.com/hyperledger/fabric/bccsp/factory"
-	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/common/tools/cryptogen/ca"
-	"github.com/hyperledger/fabric/common/tools/cryptogen/csp"
-	oqs "github.com/hyperledger/fabric/external_crypto"
-	fabricmsp "github.com/hyperledger/fabric/msp"
-	"gopkg.in/yaml.v2"
 	"os"
 	"path/filepath"
-)
 
-var logger = flogging.MustGetLogger("cryptogen.msp.generator")
+	"github.com/hyperledger/fabric/bccsp"
+	"github.com/hyperledger/fabric/bccsp/factory"
+	"github.com/hyperledger/fabric/common/tools/cryptogen/ca"
+	"github.com/hyperledger/fabric/common/tools/cryptogen/csp"
+	fabricmsp "github.com/hyperledger/fabric/msp"
+	"gopkg.in/yaml.v2"
+)
 
 const (
 	CLIENT = iota
@@ -45,7 +42,7 @@ var nodeOUMap = map[int]string{
 }
 
 func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
-	tlsCA *ca.CA, nodeType int, nodeOUs bool, genOQSAlg *string) error {
+	tlsCA *ca.CA, nodeType int, nodeOUs bool) error {
 
 	// create folder structure
 	mspDir := filepath.Join(baseDir, "msp")
@@ -67,8 +64,8 @@ func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
 	// get keystore path
 	keystore := filepath.Join(mspDir, "keystore")
 
-	// generate classical crypto private key, which saves both public and private key in the Keystore
-	priv, _, err := csp.GeneratePrivateKey(keystore, &bccsp.ECDSAP256KeyGenOpts{Temporary: false})
+	// generate private key
+	priv, _, err := csp.GeneratePrivateKey(keystore)
 	if err != nil {
 		return err
 	}
@@ -78,32 +75,13 @@ func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
 	if err != nil {
 		return err
 	}
-
-	// Only generate hybrid quantum-safe identities for peers and orderers.
-	// The fabric client does not currently support anything but ECDSA.
-	var qPubKey *oqs.PublicKey = nil
-	if genOQSAlg != nil && *genOQSAlg != "" {
-		nodeName := nodeOUMap[nodeType]
-		if nodeName == PEEROU || nodeName == ORDEREROU {
-			// generate quantum-safe private key, which saves both public and private key in the Keystore
-			qPrivKey, _, err := csp.GeneratePrivateKey(keystore, &bccsp.OQSKeyGenOpts{Temporary: false, SignatureScheme: *genOQSAlg})
-			if err != nil {
-				return err
-			}
-			qPubKey, err = csp.GetQSPublicKey(qPrivKey)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
 	// generate X509 certificate using signing CA
 	var ous []string
 	if nodeOUs {
 		ous = []string{nodeOUMap[nodeType]}
 	}
 	cert, err := signCA.SignCertificate(filepath.Join(mspDir, "signcerts"),
-		name, ous, nil, ecPubKey, qPubKey, x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{})
+		name, ous, nil, ecPubKey, x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{})
 	if err != nil {
 		return err
 	}
@@ -146,7 +124,7 @@ func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
 	*/
 
 	// generate private key
-	tlsPrivKey, _, err := csp.GeneratePrivateKey(tlsDir, &bccsp.ECDSAP256KeyGenOpts{Temporary: false})
+	tlsPrivKey, _, err := csp.GeneratePrivateKey(tlsDir)
 	if err != nil {
 		return err
 	}
@@ -157,7 +135,7 @@ func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
 	}
 	// generate X509 certificate using TLS CA
 	_, err = tlsCA.SignCertificate(filepath.Join(tlsDir),
-		name, nil, sans, tlsPubKey, nil, x509.KeyUsageDigitalSignature|x509.KeyUsageKeyEncipherment,
+		name, nil, sans, tlsPubKey, x509.KeyUsageDigitalSignature|x509.KeyUsageKeyEncipherment,
 		[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth})
 	if err != nil {
 		return err
@@ -225,7 +203,7 @@ func GenerateVerifyingMSP(baseDir string, signCA *ca.CA, tlsCA *ca.CA, nodeOUs b
 		return err
 	}
 	_, err = signCA.SignCertificate(filepath.Join(baseDir, "admincerts"), signCA.Name,
-		nil, nil, ecPubKey, nil, x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{})
+		nil, nil, ecPubKey, x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{})
 	if err != nil {
 		return err
 	}
@@ -319,4 +297,3 @@ func exportConfig(mspDir, caFile string, enable bool) error {
 
 	return err
 }
-

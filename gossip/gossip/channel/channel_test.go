@@ -10,7 +10,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	common2 "github.com/hyperledger/fabric/protos/common"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -134,7 +133,7 @@ func (cs *cryptoService) VerifyByChannel(channel common.ChainID, identity api.Pe
 	return args.Get(0).(error)
 }
 
-func (cs *cryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock *common2.Block) error {
+func (cs *cryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock []byte) error {
 	args := cs.Called(signedBlock)
 	if args.Get(0) == nil {
 		return nil
@@ -186,10 +185,12 @@ func (m *receivedMsg) GetConnectionInfo() *proto.ConnectionInfo {
 }
 
 type gossipAdapterMock struct {
+	signCallCount uint32
 	mock.Mock
 }
 
 func (ga *gossipAdapterMock) Sign(msg *proto.GossipMessage) (*proto.SignedGossipMessage, error) {
+	atomic.AddUint32(&ga.signCallCount, 1)
 	return msg.NoopSign()
 }
 
@@ -212,7 +213,12 @@ func (ga *gossipAdapterMock) DeMultiplex(msg interface{}) {
 
 func (ga *gossipAdapterMock) GetMembership() []discovery.NetworkMember {
 	args := ga.Called()
-	members := args.Get(0).([]discovery.NetworkMember)
+	val := args.Get(0)
+	if f, isFunc := val.(func() []discovery.NetworkMember); isFunc {
+		return f()
+	}
+
+	members := val.([]discovery.NetworkMember)
 
 	return members
 }
@@ -355,6 +361,7 @@ func TestMsgStoreNotExpire(t *testing.T) {
 	// Receive StateInfo messages from other peers
 	gc.HandleMessage(&receivedMsg{PKIID: pkiID2, msg: createStateInfoMsg(1, pkiID2, channelA)})
 	gc.HandleMessage(&receivedMsg{PKIID: pkiID3, msg: createStateInfoMsg(1, pkiID3, channelA)})
+	time.Sleep(adapter.GetConf().PublishStateInfoInterval * 2)
 
 	simulateStateInfoRequest := func(pkiID []byte, outChan chan *proto.SignedGossipMessage) {
 		sentMessages := make(chan *proto.GossipMessage, 1)
@@ -498,8 +505,14 @@ func TestChannelPeriodicalPublishStateInfo(t *testing.T) {
 	cs := &cryptoService{}
 	cs.On("VerifyBlock", mock.Anything).Return(nil)
 
+	peerA := discovery.NetworkMember{
+		PKIid:            pkiIDInOrg1,
+		Endpoint:         "a",
+		InternalEndpoint: "a",
+	}
+
 	adapter := new(gossipAdapterMock)
-	configureAdapter(adapter)
+	configureAdapter(adapter, peerA)
 	adapter.On("Send", mock.Anything, mock.Anything)
 	adapter.On("Gossip", mock.Anything).Run(func(arg mock.Arguments) {
 		if atomic.LoadInt32(&receivedMsg) == int32(1) {
@@ -656,7 +669,7 @@ func TestChannelPull(t *testing.T) {
 		case <-time.After(time.Second * 5):
 			t.Fatal("Haven't received blocks on time")
 		case msg := <-receivedBlocksChan:
-			assert.Equal(t, uint64(expectedSeq), msg.GetDataMsg().Payload.Data.Header.Number)
+			assert.Equal(t, uint64(expectedSeq), msg.GetDataMsg().Payload.SeqNum)
 		}
 	}
 }
@@ -1083,6 +1096,63 @@ func TestChannelBadBlocks(t *testing.T) {
 	cs.On("VerifyBlock", mock.Anything).Return(errors.New("Bad signature"))
 	gc.HandleMessage(&receivedMsg{msg: createDataMsg(4, channelA), PKIID: pkiIDInOrg1})
 	assert.Len(t, receivedMessages, 0)
+}
+
+func TestNoGossipOrSigningWhenEmptyMembership(t *testing.T) {
+	t.Parallel()
+
+	var gossipedWG sync.WaitGroup
+	gossipedWG.Add(1)
+
+	var emptyMembership []discovery.NetworkMember
+	nonEmptyMembership := []discovery.NetworkMember{{PKIid: pkiIDInOrg1}}
+
+	var dynamicMembership atomic.Value
+	dynamicMembership.Store(nonEmptyMembership)
+
+	cs := &cryptoService{}
+	adapter := new(gossipAdapterMock)
+	// Override configuration and disable outgoing state info requests
+	conf := conf
+	conf.PublishStateInfoInterval = time.Second
+	conf.RequestStateInfoInterval = time.Hour
+	conf.TimeForMembershipTracker = time.Hour
+	adapter.On("GetConf").Return(conf)
+	adapter.On("GetOrgOfPeer", pkiIDInOrg1).Return(orgInChannelA)
+	adapter.On("Gossip", mock.Anything).Run(func(arg mock.Arguments) {
+		gossipedWG.Done()
+	})
+	adapter.On("GetMembership").Return(func() []discovery.NetworkMember {
+		return dynamicMembership.Load().([]discovery.NetworkMember)
+	})
+
+	gc := NewGossipChannel(pkiIDInOrg1, orgInChannelA, cs, channelA, adapter, &joinChanMsg{}, disabledMetrics)
+	// We have signed only once at creation time
+	assert.Equal(t, uint32(1), atomic.LoadUint32(&adapter.signCallCount))
+	defer gc.Stop()
+	gc.UpdateLedgerHeight(1)
+
+	// The first time we have membership, so we should gossip and sign
+	gossipedWG.Wait()
+	// So far we have signed twice: Once at creation time, and once before we gossiped
+	assert.Equal(t, uint32(2), atomic.LoadUint32(&adapter.signCallCount))
+
+	// Membership is now empty
+	dynamicMembership.Store(emptyMembership)
+	// Set the required conditions for gossiping and signing
+	gc.UpdateLedgerHeight(2)
+	// Wait some time and ensure we do not sign because membership is now empty
+	time.Sleep(conf.PublishStateInfoInterval * 3)
+	// We haven't signed anything
+	assert.Equal(t, uint32(2), atomic.LoadUint32(&adapter.signCallCount))
+
+	assert.Empty(t, gc.Self().GetStateInfo().Properties.Chaincodes)
+	gossipedWG.Add(1)
+	// Now, update chaincodes and check our chaincode information was indeed updated
+	gc.UpdateChaincodes([]*proto.Chaincode{{Name: "mycc"}})
+	// We should have signed regardless!
+	assert.Equal(t, uint32(3), atomic.LoadUint32(&adapter.signCallCount))
+	assert.Equal(t, "mycc", gc.Self().GetStateInfo().Properties.Chaincodes[0].Name)
 }
 
 func TestChannelPulledBadBlocks(t *testing.T) {
@@ -1726,17 +1796,21 @@ func TestOnDemandGossip(t *testing.T) {
 
 	// Scenario: update the metadata and ensure only 1 dissemination
 	// takes place when membership is not empty
+	peerA := discovery.NetworkMember{
+		PKIid:            pkiIDInOrg1,
+		Endpoint:         "a",
+		InternalEndpoint: "a",
+	}
 
 	cs := &cryptoService{}
 	adapter := new(gossipAdapterMock)
-	configureAdapter(adapter)
+	configureAdapter(adapter, peerA)
 
 	gossipedEvents := make(chan struct{})
 
 	conf := conf
 	conf.PublishStateInfoInterval = time.Millisecond * 200
 	adapter.On("GetConf").Return(conf)
-	adapter.On("GetMembership").Return([]discovery.NetworkMember{})
 	adapter.On("Gossip", mock.Anything).Run(func(mock.Arguments) {
 		gossipedEvents <- struct{}{}
 	})
@@ -1749,19 +1823,13 @@ func TestOnDemandGossip(t *testing.T) {
 		assert.Fail(t, "Should not have gossiped because metadata has not been updated yet")
 	case <-time.After(time.Millisecond * 500):
 	}
-	gc.UpdateLedgerHeight(0)
+	gc.UpdateLedgerHeight(1)
 	select {
 	case <-gossipedEvents:
 	case <-time.After(time.Second):
 		assert.Fail(t, "Didn't gossip within a timely manner")
 	}
-	select {
-	case <-gossipedEvents:
-	case <-time.After(time.Second):
-		assert.Fail(t, "Should have gossiped a second time, because membership is empty")
-	}
-	adapter = new(gossipAdapterMock)
-	configureAdapter(adapter, []discovery.NetworkMember{{}}...)
+	gc.UpdateLedgerHeight(2)
 	adapter.On("Gossip", mock.Anything).Run(func(mock.Arguments) {
 		gossipedEvents <- struct{}{}
 	})
@@ -1777,7 +1845,7 @@ func TestOnDemandGossip(t *testing.T) {
 		assert.Fail(t, "Should not have gossiped a fourth time, because dirty flag should have been turned off")
 	case <-time.After(time.Millisecond * 500):
 	}
-	gc.UpdateLedgerHeight(1)
+	gc.UpdateLedgerHeight(3)
 	select {
 	case <-gossipedEvents:
 	case <-time.After(time.Second):
@@ -1819,7 +1887,7 @@ func TestChannelPullWithDigestsFilter(t *testing.T) {
 	case <-time.After(time.Second * 5):
 		t.Fatal("Haven't received blocks on time")
 	case msg := <-receivedBlocksChan:
-		assert.Equal(t, uint64(11), msg.GetDataMsg().Payload.Data.Header.Number)
+		assert.Equal(t, uint64(11), msg.GetDataMsg().Payload.SeqNum)
 	}
 
 }
@@ -1940,7 +2008,8 @@ func dataMsgOfChannel(seqnum uint64, channel common.ChainID) *proto.SignedGossip
 		Content: &proto.GossipMessage_DataMsg{
 			DataMsg: &proto.DataMessage{
 				Payload: &proto.Payload{
-					Data: &common2.Block{Header: &common2.BlockHeader{Number: seqnum}},
+					Data:   []byte{},
+					SeqNum: seqnum,
 				},
 			},
 		},
@@ -1991,7 +2060,8 @@ func createDataMsg(seqnum uint64, channel common.ChainID) *proto.SignedGossipMes
 		Content: &proto.GossipMessage_DataMsg{
 			DataMsg: &proto.DataMessage{
 				Payload: &proto.Payload{
-					Data: &common2.Block{Header: &common2.BlockHeader{Number: seqnum}},
+					Data:   []byte{},
+					SeqNum: seqnum,
 				},
 			},
 		},

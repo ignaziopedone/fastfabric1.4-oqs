@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
@@ -52,7 +51,7 @@ func TestAddBlockWithWrongHash(t *testing.T) {
 	blkfileMgrWrapper.addBlocks(blocks[0:9])
 	lastBlock := blocks[9]
 	lastBlock.Header.PreviousHash = []byte("someJunkHash") // set the hash to something unexpected
-	err := blkfileMgrWrapper.blockfileMgr.addBlock(lastBlock.Block)
+	err := blkfileMgrWrapper.blockfileMgr.addBlock(lastBlock)
 	assert.Error(t, err, "An error is expected when adding a block with some unexpected hash")
 	assert.Contains(t, err.Error(), "unexpected Previous block hash. Expected PreviousHash")
 	t.Logf("err = %s", err)
@@ -83,12 +82,12 @@ func testBlockfileMgrCrashDuringWriting(t *testing.T, numBlocksBeforeCheckpoint 
 
 	// create all necessary blocks
 	totalBlocks := numBlocksBeforeCheckpoint + numBlocksAfterCheckpoint
-	allBlocks := []*cached.Block{cached.WrapBlock(gb)}
+	allBlocks := []*common.Block{gb}
 	allBlocks = append(allBlocks, bg.NextTestBlocks(totalBlocks+1)...)
 
 	// identify the blocks that are to be added beforeCP, afterCP, and after restart
-	blocksBeforeCP := []*cached.Block{}
-	blocksAfterCP := []*cached.Block{}
+	blocksBeforeCP := []*common.Block{}
+	blocksAfterCP := []*common.Block{}
 	if numBlocksBeforeCheckpoint != 0 {
 		blocksBeforeCP = allBlocks[0:numBlocksBeforeCheckpoint]
 	}
@@ -148,7 +147,7 @@ func TestBlockfileMgrBlockIterator(t *testing.T) {
 }
 
 func testBlockfileMgrBlockIterator(t *testing.T, blockfileMgr *blockfileMgr,
-	firstBlockNum int, lastBlockNum int, expectedBlocks []*cached.Block) {
+	firstBlockNum int, lastBlockNum int, expectedBlocks []*common.Block) {
 	itr, err := blockfileMgr.retrieveBlocks(uint64(firstBlockNum))
 	defer itr.Close()
 	assert.NoError(t, err, "Error while getting blocks iterator")
@@ -225,7 +224,7 @@ func TestBlockfileMgrGetTxByIdDuplicateTxid(t *testing.T) {
 	txValidationFlags.SetFlag(1, peer.TxValidationCode_INVALID_OTHER_REASON)
 	txValidationFlags.SetFlag(2, peer.TxValidationCode_DUPLICATE_TXID)
 	block1.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txValidationFlags
-	assert.NoError(t, blkFileMgr.addBlock(block1.Block))
+	assert.NoError(t, blkFileMgr.addBlock(block1))
 
 	block2 := bg.NextBlockWithTxid(
 		[][]byte{
@@ -238,7 +237,7 @@ func TestBlockfileMgrGetTxByIdDuplicateTxid(t *testing.T) {
 	txValidationFlags.SetFlag(0, peer.TxValidationCode_VALID)
 	txValidationFlags.SetFlag(1, peer.TxValidationCode_DUPLICATE_TXID)
 	block2.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txValidationFlags
-	assert.NoError(t, blkFileMgr.addBlock(block2.Block))
+	assert.NoError(t, blkFileMgr.addBlock(block2))
 
 	txenvp1, err := putil.GetEnvelopeFromBlock(block1.Data.Data[0])
 	assert.NoError(t, err)
@@ -310,7 +309,7 @@ func TestBlockfileMgrFileRolling(t *testing.T) {
 	blocks := testutil.ConstructTestBlocks(t, 200)
 	size := 0
 	for _, block := range blocks[:100] {
-		by, _, err := serializeBlock(block.Block)
+		by, _, err := serializeBlock(block)
 		assert.NoError(t, err, "Error while serializing block")
 		blockBytesSize := len(by)
 		encodedLen := proto.EncodeVarint(uint64(blockBytesSize))

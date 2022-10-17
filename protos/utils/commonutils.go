@@ -8,7 +8,6 @@ package utils
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -292,13 +291,13 @@ func UnmarshalSignatureHeaderOrPanic(bytes []byte) *cb.SignatureHeader {
 
 // IsConfigBlock validates whenever given block contains configuration
 // update transaction
-func IsConfigBlock(block *cached.Block) bool {
-	envelope, err := block.UnmarshalSpecificEnvelope(0)
+func IsConfigBlock(block *cb.Block) bool {
+	envelope, err := ExtractEnvelope(block, 0)
 	if err != nil {
 		return false
 	}
 
-	payload, err := envelope.UnmarshalPayload()
+	payload, err := GetPayload(envelope)
 	if err != nil {
 		return false
 	}
@@ -307,7 +306,7 @@ func IsConfigBlock(block *cached.Block) bool {
 		return false
 	}
 
-	hdr, err := payload.Header.UnmarshalChannelHeader()
+	hdr, err := UnmarshalChannelHeader(payload.Header.ChannelHeader)
 	if err != nil {
 		return false
 	}

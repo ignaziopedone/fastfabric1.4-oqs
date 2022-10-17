@@ -17,12 +17,12 @@ limitations under the License.
 package fsblkstorage
 
 import (
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"os"
 	"testing"
 
 	"github.com/hyperledger/fabric/common/ledger/testutil"
 	"github.com/hyperledger/fabric/common/ledger/util"
+	"github.com/hyperledger/fabric/protos/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,7 +32,7 @@ func TestBlockFileScanSmallTxOnly(t *testing.T) {
 	ledgerid := "testLedger"
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, ledgerid)
 	bg, gb := testutil.NewBlockGenerator(t, ledgerid, false)
-	blocks := []*cached.Block{cached.WrapBlock(gb)}
+	blocks := []*common.Block{gb}
 	blocks = append(blocks, bg.NextTestBlock(0, 0))
 	blocks = append(blocks, bg.NextTestBlock(0, 0))
 	blocks = append(blocks, bg.NextTestBlock(0, 0))
@@ -48,7 +48,7 @@ func TestBlockFileScanSmallTxOnly(t *testing.T) {
 	assert.Equal(t, len(blocks), numBlocks)
 	assert.Equal(t, fileSize, endOffsetLastBlock)
 
-	expectedLastBlockBytes, _, err := serializeBlock(blocks[len(blocks)-1].Block)
+	expectedLastBlockBytes, _, err := serializeBlock(blocks[len(blocks)-1])
 	assert.Equal(t, expectedLastBlockBytes, lastBlockBytes)
 }
 
@@ -58,7 +58,7 @@ func TestBlockFileScanSmallTxLastTxIncomplete(t *testing.T) {
 	ledgerid := "testLedger"
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, ledgerid)
 	bg, gb := testutil.NewBlockGenerator(t, ledgerid, false)
-	blocks := []*cached.Block{cached.WrapBlock(gb)}
+	blocks := []*common.Block{gb}
 	blocks = append(blocks, bg.NextTestBlock(0, 0))
 	blocks = append(blocks, bg.NextTestBlock(0, 0))
 	blocks = append(blocks, bg.NextTestBlock(0, 0))
@@ -79,6 +79,6 @@ func TestBlockFileScanSmallTxLastTxIncomplete(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(blocks)-1, numBlocks)
 
-	expectedLastBlockBytes, _, err := serializeBlock(blocks[len(blocks)-2].Block)
+	expectedLastBlockBytes, _, err := serializeBlock(blocks[len(blocks)-2])
 	assert.Equal(t, expectedLastBlockBytes, lastBlockBytes)
 }

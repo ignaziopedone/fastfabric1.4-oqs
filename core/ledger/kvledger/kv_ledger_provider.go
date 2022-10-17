@@ -9,6 +9,7 @@ package kvledger
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/core/ledger"
@@ -19,11 +20,10 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/ledgerstorage"
-	"github.com/hyperledger/fabric/fastfabric/cached"
-	"github.com/hyperledger/fabric/fastfabric/statedb"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/utils"
 	"github.com/pkg/errors"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 var (
@@ -108,8 +108,7 @@ func (provider *Provider) Initialize(initializer *ledger.Initializer) error {
 // created ledgers list (atomically). If a crash happens in between, the 'recoverUnderConstructionLedger'
 // function is invoked before declaring the provider to be usable
 func (provider *Provider) Create(genesisBlock *common.Block) (ledger.PeerLedger, error) {
-	genBlock := cached.WrapBlock(genesisBlock)
-	ledgerID, err := utils.GetChainIDFromBlock(genBlock.Block)
+	ledgerID, err := utils.GetChainIDFromBlock(genesisBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -130,11 +129,7 @@ func (provider *Provider) Create(genesisBlock *common.Block) (ledger.PeerLedger,
 		panicOnErr(provider.idStore.unsetUnderConstructionFlag(), "Error while unsetting under construction flag")
 		return nil, err
 	}
-	if err := lgr.CommitWithPvtData(&ledger.BlockAndPvtData{
-		Block: genBlock,
-	},
-		&ledger.CommitOptions{},
-	); err != nil {
+	if err := lgr.CommitWithPvtData(&ledger.BlockAndPvtData{Block: genesisBlock}, &ledger.CommitOptions{}); err != nil {
 		lgr.Close()
 		return nil, err
 	}
@@ -271,14 +266,13 @@ func panicOnErr(err error, mgsFormat string, args ...interface{}) {
 // Ledger id persistence related code
 ///////////////////////////////////////////////////////////////////////
 type idStore struct {
-	db       *statedb.DBHandle
-	provider *statedb.Provider
+	db *leveldbhelper.DB
 }
 
 func openIDStore(path string) *idStore {
-	dbProvider := statedb.NewProvider(path)
-	db := dbProvider.GetDBHandle("idstore")
-	return &idStore{db, dbProvider}
+	db := leveldbhelper.CreateDB(&leveldbhelper.Conf{DBPath: path})
+	db.Open()
+	return &idStore{db}
 }
 
 func (s *idStore) setUnderConstructionFlag(ledgerID string) error {
@@ -310,7 +304,7 @@ func (s *idStore) createLedgerID(ledgerID string, gb *common.Block) error {
 	if val, err = proto.Marshal(gb); err != nil {
 		return err
 	}
-	batch := statedb.NewUpdateBatch()
+	batch := &leveldb.Batch{}
 	batch.Put(key, val)
 	batch.Delete(underConstructionLedgerKey)
 	return s.db.WriteBatch(batch, true)
@@ -343,7 +337,7 @@ func (s *idStore) getAllLedgerIds() ([]string, error) {
 }
 
 func (s *idStore) close() {
-	s.provider.Close()
+	s.db.Close()
 }
 
 func (s *idStore) encodeLedgerKey(ledgerID string) []byte {

@@ -9,7 +9,6 @@ package gossip
 import (
 	"bytes"
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"time"
 
 	"github.com/hyperledger/fabric/bccsp"
@@ -23,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	pcommon "github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/protos/utils"
 	"github.com/pkg/errors"
 )
 
@@ -107,7 +107,13 @@ func (s *MSPMessageCryptoService) GetPKIidOfCert(peerIdentity api.PeerIdentityTy
 // VerifyBlock returns nil if the block is properly signed, and the claimed seqNum is the
 // sequence number that the block's header contains.
 // else returns error
-func (s *MSPMessageCryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, block *cached.Block) error {
+func (s *MSPMessageCryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock []byte) error {
+	// - Convert signedBlock to common.Block.
+	block, err := utils.GetBlockFromBlockBytes(signedBlock)
+	if err != nil {
+		return fmt.Errorf("Failed unmarshalling block bytes on channel [%s]: [%s]", chainID, err)
+	}
+
 	if block.Header == nil {
 		return fmt.Errorf("Invalid Block on channel [%s]. Header must be different from nil.", chainID)
 	}
@@ -118,7 +124,7 @@ func (s *MSPMessageCryptoService) VerifyBlock(chainID common.ChainID, seqNum uin
 	}
 
 	// - Extract channelID and compare with chainID
-	channelID, err := block.GetChannelId()
+	channelID, err := utils.GetChainIDFromBlock(block)
 	if err != nil {
 		return fmt.Errorf("Failed getting channel id from block with id [%d] on channel [%s]: [%s]", block.Header.Number, chainID, err)
 	}
@@ -132,7 +138,7 @@ func (s *MSPMessageCryptoService) VerifyBlock(chainID common.ChainID, seqNum uin
 		return fmt.Errorf("Block with id [%d] on channel [%s] does not have metadata. Block not valid.", block.Header.Number, chainID)
 	}
 
-	metadata, err := block.UnmarshalSpecificMetadata(pcommon.BlockMetadataIndex_SIGNATURES)
+	metadata, err := utils.GetMetadataFromBlock(block, pcommon.BlockMetadataIndex_SIGNATURES)
 	if err != nil {
 		return fmt.Errorf("Failed unmarshalling medatata for signatures [%s]", err)
 	}
@@ -160,8 +166,8 @@ func (s *MSPMessageCryptoService) VerifyBlock(chainID common.ChainID, seqNum uin
 
 	// - Prepare SignedData
 	signatureSet := []*pcommon.SignedData{}
-	for i, metadataSignature := range metadata.Signatures {
-		shdr, err := metadata.UnmarshalSpecificSignatureHeader(i)
+	for _, metadataSignature := range metadata.Signatures {
+		shdr, err := utils.GetSignatureHeader(metadataSignature.SignatureHeader)
 		if err != nil {
 			return fmt.Errorf("Failed unmarshalling signature header for block with id [%d] on channel [%s]: [%s]", block.Header.Number, chainID, err)
 		}

@@ -8,14 +8,14 @@ package internal
 
 import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/storageutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 )
 
-func prepareTxOps(rwset *cached.TxRwSet, txht *version.Height,
+func prepareTxOps(rwset *rwsetutil.TxRwSet, txht *version.Height,
 	precedingUpdates *PubAndHashUpdates, db privacyenabledstate.DB) (txOps, error) {
 	txops := txOps{}
 	txops.applyTxRwset(rwset)
@@ -55,7 +55,7 @@ func prepareTxOps(rwset *cached.TxRwSet, txht *version.Height,
 
 // applyTxRwset records the upsertion/deletion of a kv and updatation/deletion
 // of asociated metadata present in a txrwset
-func (txops txOps) applyTxRwset(rwset *cached.TxRwSet) error {
+func (txops txOps) applyTxRwset(rwset *rwsetutil.TxRwSet) error {
 	for _, nsRWSet := range rwset.NsRwSets {
 		ns := nsRWSet.NameSpace
 		for _, kvWrite := range nsRWSet.KvRwSet.Writes {
@@ -73,7 +73,7 @@ func (txops txOps) applyTxRwset(rwset *cached.TxRwSet) error {
 					&kvrwset.KVWrite{
 						Key:      string(hashedWrite.KeyHash),
 						Value:    hashedWrite.ValueHash,
-						IsDelete: hashedWrite.IsDelete,
+						IsDelete: rwsetutil.IsKVWriteHashDelete(hashedWrite),
 					},
 				)
 			}
@@ -93,7 +93,7 @@ func (txops txOps) applyTxRwset(rwset *cached.TxRwSet) error {
 
 // applyKVWrite records upsertion/deletion of a kvwrite
 func (txops txOps) applyKVWrite(ns, coll string, kvWrite *kvrwset.KVWrite) {
-	if kvWrite.IsDelete {
+	if rwsetutil.IsKVWriteDelete(kvWrite) {
 		txops.delete(compositeKey{ns, coll, kvWrite.Key})
 	} else {
 		txops.upsert(compositeKey{ns, coll, kvWrite.Key}, kvWrite.Value)

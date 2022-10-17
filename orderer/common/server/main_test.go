@@ -316,7 +316,6 @@ func TestLoadLocalMSP(t *testing.T) {
 							SwOpts: &factory.SwOpts{
 								HashFamily: "SHA2",
 								SecLevel:   256,
-								Ephemeral:  true,
 							},
 						},
 					},
@@ -470,6 +469,37 @@ func TestUpdateTrustedRoots(t *testing.T) {
 	assert.Equal(t, 2, len(caSupport.OrdererRootCAsByChainAndOrg[genesisconfig.TestChainID]["SampleOrg"]))
 	assert.Len(t, predDialer.ClientConfig.SecOpts.ServerRootCAs, 2)
 	grpcServer.Listener().Close()
+}
+
+func TestRootServerCertAggregation(t *testing.T) {
+	credSupport := &comm.CredentialSupport{
+		OrdererRootCAsByChainAndOrg: make(comm.OrgRootCAs),
+	}
+
+	predDialer := &cluster.PredicateDialer{
+		ClientConfig: comm.ClientConfig{
+			SecOpts: &comm.SecureOptions{},
+		},
+	}
+
+	ca1, err := tlsgen.NewCA()
+	require.NoError(t, err)
+
+	ca2, err := tlsgen.NewCA()
+	require.NoError(t, err)
+
+	credSupport.OrdererRootCAsByChainAndOrg["foo"] = map[string]comm.CertificateBundle{
+		"Org1": [][]byte{ca1.CertBytes()},
+	}
+	credSupport.OrdererRootCAsByChainAndOrg["bar"] = map[string]comm.CertificateBundle{
+		"Org1": [][]byte{ca1.CertBytes()},
+	}
+
+	updateClusterDialer(credSupport, predDialer, [][]byte{ca2.CertBytes(), ca2.CertBytes(), ca2.CertBytes()})
+
+	require.Len(t, predDialer.ClientConfig.SecOpts.ServerRootCAs, 2)
+	require.Contains(t, predDialer.ClientConfig.SecOpts.ServerRootCAs, ca1.CertBytes())
+	require.Contains(t, predDialer.ClientConfig.SecOpts.ServerRootCAs, ca2.CertBytes())
 }
 
 func TestConfigureClusterListener(t *testing.T) {
@@ -733,7 +763,6 @@ func genesisConfig(t *testing.T) *localconfig.TopLevel {
 				SwOpts: &factory.SwOpts{
 					HashFamily: "SHA2",
 					SecLevel:   256,
-					Ephemeral:  true,
 				},
 			},
 		},

@@ -182,6 +182,7 @@ func Start(cmd string, conf *localconfig.TopLevel) {
 		serverConfig.SecOpts.Certificate,
 		[][]byte{clusterClientConfig.SecOpts.Certificate},
 		sigHdr.Creator,
+		expirationLogger.Infof,
 		expirationLogger.Warnf, // This can be used to piggyback a metric event in the future
 		time.Now(),
 		time.AfterFunc)
@@ -421,10 +422,12 @@ func configureClusterListener(conf *localconfig.TopLevel, generalConf comm.Serve
 
 func initializeClusterClientConfig(conf *localconfig.TopLevel) comm.ClientConfig {
 	cc := comm.ClientConfig{
-		AsyncConnect: true,
-		KaOpts:       comm.DefaultKeepaliveOptions,
-		Timeout:      conf.General.Cluster.DialTimeout,
-		SecOpts:      &comm.SecureOptions{},
+		AsyncConnect:   true,
+		KaOpts:         comm.DefaultKeepaliveOptions,
+		Timeout:        conf.General.Cluster.DialTimeout,
+		SecOpts:        &comm.SecureOptions{},
+		MaxRecvMsgSize: int(conf.General.MaxRecvMsgSize),
+		MaxSendMsgSize: int(conf.General.MaxSendMsgSize),
 	}
 
 	if conf.General.Cluster.ClientCertificate == "" {
@@ -453,8 +456,17 @@ func initializeClusterClientConfig(conf *localconfig.TopLevel) comm.ClientConfig
 		serverRootCAs = append(serverRootCAs, rootCACert)
 	}
 
+	timeShift := conf.General.TLS.TLSHandshakeTimeShift
+	// XXX note, hardcoding a type of etcdraft here is a hack, but, we will
+	// not be adding any new consensus types to this stream, and this is a backport
+	// also, it's simply for a debug message and has no other effect and was
+	// removed in later versions.
+	if reuseGrpcListener := reuseListener(conf, "etcdraft"); !reuseGrpcListener {
+		timeShift = conf.General.Cluster.TLSHandshakeTimeShift
+	}
+
 	cc.SecOpts = &comm.SecureOptions{
-		TimeShift:         conf.General.Cluster.TLSHandshakeTimeShift,
+		TimeShift:         timeShift,
 		RequireClientCert: true,
 		CipherSuites:      comm.DefaultTLSCipherSuites,
 		ServerRootCAs:     serverRootCAs,
@@ -471,6 +483,7 @@ func initializeServerConfig(conf *localconfig.TopLevel, metricsProvider metrics.
 	secureOpts := &comm.SecureOptions{
 		UseTLS:            conf.General.TLS.Enabled,
 		RequireClientCert: conf.General.TLS.ClientAuthRequired,
+		TimeShift:         conf.General.TLS.TLSHandshakeTimeShift,
 	}
 	// check to see if TLS is enabled
 	if secureOpts.UseTLS {
@@ -543,6 +556,8 @@ func initializeServerConfig(conf *localconfig.TopLevel, metricsProvider metrics.
 				grpclogging.WithLeveler(grpclogging.LevelerFunc(grpcLeveler)),
 			),
 		},
+		MaxRecvMsgSize: int(conf.General.MaxRecvMsgSize),
+		MaxSendMsgSize: int(conf.General.MaxSendMsgSize),
 	}
 }
 
@@ -866,16 +881,28 @@ func updateClusterDialer(rootCASupport *comm.CredentialSupport, clusterDialer *c
 
 	// Iterate over all orderer root CAs for all chains and add them
 	// to the root CAs
-	var clusterRootCAs [][]byte
+	clusterRootCAs := make(cluster.StringSet)
 	for _, orgRootCAs := range rootCASupport.OrdererRootCAsByChainAndOrg {
 		for _, roots := range orgRootCAs {
-			clusterRootCAs = append(clusterRootCAs, roots...)
+			for _, root := range roots {
+				clusterRootCAs[string(root)] = struct{}{}
+			}
 		}
 	}
+
 	// Add the local root CAs too
-	clusterRootCAs = append(clusterRootCAs, localClusterRootCAs...)
+	for _, localRoot := range localClusterRootCAs {
+		clusterRootCAs[string(localRoot)] = struct{}{}
+	}
+
+	var clusterRootCAsBytes [][]byte
+	// Convert the StringSet back to a byte slice
+	for root := range clusterRootCAs {
+		clusterRootCAsBytes = append(clusterRootCAsBytes, []byte(root))
+	}
+
 	// Update the cluster config with the new root CAs
-	clusterDialer.UpdateRootCAs(clusterRootCAs)
+	clusterDialer.UpdateRootCAs(clusterRootCAsBytes)
 }
 
 func prettyPrintStruct(i interface{}) {

@@ -241,7 +241,9 @@ func configFromEnv(prefix string) (address, override string, clientConfig comm.C
 	clientConfig.Timeout = connTimeout
 	secOpts := &comm.SecureOptions{
 		UseTLS:            viper.GetBool(prefix + ".tls.enabled"),
-		RequireClientCert: viper.GetBool(prefix + ".tls.clientAuthRequired")}
+		RequireClientCert: viper.GetBool(prefix + ".tls.clientAuthRequired"),
+		TimeShift:         viper.GetDuration(prefix + ".tls.handshakeTimeShift"),
+	}
 	if secOpts.UseTLS {
 		caPEM, res := ioutil.ReadFile(config.GetPath(prefix + ".tls.rootcert.file"))
 		if res != nil {
@@ -268,6 +270,14 @@ func configFromEnv(prefix string) (address, override string, clientConfig comm.C
 		secOpts.Certificate = certPEM
 	}
 	clientConfig.SecOpts = secOpts
+	clientConfig.MaxRecvMsgSize = comm.DefaultMaxRecvMsgSize
+	if viper.IsSet(prefix + ".maxRecvMsgSize") {
+		clientConfig.MaxRecvMsgSize = int(viper.GetInt(prefix + ".maxRecvMsgSize"))
+	}
+	clientConfig.MaxSendMsgSize = comm.DefaultMaxSendMsgSize
+	if viper.IsSet(prefix + ".maxSendMsgSize") {
+		clientConfig.MaxSendMsgSize = int(viper.GetInt(prefix + ".maxSendMsgSize"))
+	}
 	return
 }
 

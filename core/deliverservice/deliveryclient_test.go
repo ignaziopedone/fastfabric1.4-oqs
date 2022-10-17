@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	proto "github.com/hyperledger/fabric/protos/common"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -66,7 +65,7 @@ func (*mockMCS) GetPKIidOfCert(peerIdentity api.PeerIdentityType) common.PKIidTy
 	return common.PKIidType("pkiID")
 }
 
-func (*mockMCS) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock *proto.Block) error {
+func (*mockMCS) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock []byte) error {
 	return nil
 }
 

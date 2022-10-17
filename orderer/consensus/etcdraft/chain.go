@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/pem"
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -350,6 +349,7 @@ func (c *Chain) Start() {
 	c.periodicChecker = &PeriodicCheck{
 		Logger:        c.logger,
 		Report:        es.confirmSuspicion,
+		ReportCleared: es.clearSuspicion,
 		CheckInterval: interval,
 		Condition:     c.suspectEviction,
 	}
@@ -844,7 +844,7 @@ func (c *Chain) writeBlock(block *common.Block, index uint64) {
 
 	c.logger.Infof("Writing block [%d] (Raft index: %d) to ledger", block.Header.Number, index)
 
-	if utils.IsConfigBlock(cached.WrapBlock(block)) {
+	if utils.IsConfigBlock(block) {
 		c.writeConfigBlock(block, index)
 		return
 	}
@@ -914,7 +914,7 @@ func (c *Chain) propose(ch chan<- *common.Block, bc *blockCreator, batches ...[]
 		}
 
 		// if it is config block, then we should wait for the commit of the block
-		if utils.IsConfigBlock(cached.WrapBlock(b)) {
+		if utils.IsConfigBlock(b) {
 			c.configInflight = true
 		}
 
@@ -933,6 +933,11 @@ func (c *Chain) catchUp(snap *raftpb.Snapshot) error {
 	if c.lastBlock.Header.Number >= b.Header.Number {
 		c.logger.Warnf("Snapshot is at block [%d], local block number is %d, no sync needed", b.Header.Number, c.lastBlock.Header.Number)
 		return nil
+	} else if b.Header.Number == c.lastBlock.Header.Number+1 {
+		c.logger.Infof("The only missing block [%d] is encapsulated in snapshot, committing it to shortcut catchup process", b.Header.Number)
+		c.commitBlock(b)
+		c.lastBlock = b
+		return nil
 	}
 
 	puller, err := c.createPuller()
@@ -950,33 +955,37 @@ func (c *Chain) catchUp(snap *raftpb.Snapshot) error {
 		if block == nil {
 			return errors.Errorf("failed to fetch block [%d] from cluster", next)
 		}
-		if utils.IsConfigBlock(cached.WrapBlock(block)) {
-			c.support.WriteConfigBlock(block, nil)
-
-			configMembership := c.detectConfChange(block)
-
-			if configMembership != nil && configMembership.Changed() {
-				c.logger.Infof("Config block [%d] changes consenter set, communication should be reconfigured", block.Header.Number)
-
-				c.raftMetadataLock.Lock()
-				c.opts.BlockMetadata = configMembership.NewBlockMetadata
-				c.opts.Consenters = configMembership.NewConsenters
-				c.raftMetadataLock.Unlock()
-
-				if err := c.configureComm(); err != nil {
-					c.logger.Panicf("Failed to configure communication: %s", err)
-				}
-			}
-		} else {
-			c.support.WriteBlock(block, nil)
-		}
-
+		c.commitBlock(block)
 		c.lastBlock = block
 		next++
 	}
 
 	c.logger.Infof("Finished syncing with cluster up to and including block [%d]", b.Header.Number)
 	return nil
+}
+
+func (c *Chain) commitBlock(block *common.Block) {
+	if !utils.IsConfigBlock(block) {
+		c.support.WriteBlock(block, nil)
+		return
+	}
+
+	c.support.WriteConfigBlock(block, nil)
+
+	configMembership := c.detectConfChange(block)
+
+	if configMembership != nil && configMembership.Changed() {
+		c.logger.Infof("Config block [%d] changes consenter set, communication should be reconfigured", block.Header.Number)
+
+		c.raftMetadataLock.Lock()
+		c.opts.BlockMetadata = configMembership.NewBlockMetadata
+		c.opts.Consenters = configMembership.NewConsenters
+		c.raftMetadataLock.Unlock()
+
+		if err := c.configureComm(); err != nil {
+			c.logger.Panicf("Failed to configure communication: %s", err)
+		}
+	}
 }
 
 func (c *Chain) detectConfChange(block *common.Block) *MembershipChanges {
@@ -1291,7 +1300,7 @@ func (c *Chain) getInFlightConfChange() *raftpb.ConfChange {
 		return nil // nothing to failover just started the chain
 	}
 
-	if !utils.IsConfigBlock(cached.WrapBlock(c.lastBlock)) {
+	if !utils.IsConfigBlock(c.lastBlock) {
 		return nil
 	}
 
@@ -1328,8 +1337,13 @@ func (c *Chain) suspectEviction() bool {
 }
 
 func (c *Chain) newEvictionSuspector() *evictionSuspector {
+	consenterCertificate := &ConsenterCertificate{
+		Logger:               c.logger,
+		ConsenterCertificate: c.opts.Cert,
+	}
+
 	return &evictionSuspector{
-		amIInChannel:               ConsenterCertificate(c.opts.Cert).IsConsenterOfChannel,
+		amIInChannel:               consenterCertificate.IsConsenterOfChannel,
 		evictionSuspicionThreshold: c.opts.EvictionSuspicion,
 		writeBlock:                 c.support.Append,
 		createPuller:               c.createPuller,
@@ -1347,4 +1361,8 @@ func (c *Chain) triggerCatchup(sn *raftpb.Snapshot) {
 	case c.snapC <- sn:
 	case <-c.doneC:
 	}
+}
+
+func (c *Chain) IsRaft() bool {
+	return true
 }

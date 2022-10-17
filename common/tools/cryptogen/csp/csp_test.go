@@ -48,7 +48,7 @@ func (mk *mockKey) Private() bool { return false }
 var testDir = filepath.Join(os.TempDir(), "csp-test")
 
 func TestLoadPrivateKey(t *testing.T) {
-	priv, _, _ := csp.GeneratePrivateKey(testDir, &bccsp.ECDSAP256KeyGenOpts{Temporary: false})
+	priv, _, _ := csp.GeneratePrivateKey(testDir)
 	pkFile := filepath.Join(testDir, hex.EncodeToString(priv.SKI())+"_sk")
 	assert.Equal(t, true, checkForFile(pkFile),
 		"Expected to find private key file")
@@ -81,7 +81,7 @@ func TestLoadPrivateKey_wrongEncoding(t *testing.T) {
 
 func TestGeneratePrivateKey(t *testing.T) {
 
-	priv, signer, err := csp.GeneratePrivateKey(testDir, &bccsp.ECDSAP256KeyGenOpts{Temporary: false})
+	priv, signer, err := csp.GeneratePrivateKey(testDir)
 	assert.NoError(t, err, "Failed to generate private key")
 	assert.NotNil(t, priv, "Should have returned a bccsp.Key")
 	assert.Equal(t, true, priv.Private(), "Failed to return private key")
@@ -96,7 +96,7 @@ func TestGeneratePrivateKey(t *testing.T) {
 
 func TestGetECPublicKey(t *testing.T) {
 
-	priv, _, err := csp.GeneratePrivateKey(testDir, &bccsp.ECDSAP256KeyGenOpts{Temporary: false})
+	priv, _, err := csp.GeneratePrivateKey(testDir)
 	assert.NoError(t, err, "Failed to generate private key")
 
 	ecPubKey, err := csp.GetECPublicKey(priv)

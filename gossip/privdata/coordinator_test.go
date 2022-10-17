@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"reflect"
 	"testing"
 	"time"
@@ -210,7 +209,7 @@ type validatorMock struct {
 	err error
 }
 
-func (v *validatorMock) Validate(block *cached.Block) error {
+func (v *validatorMock) Validate(block *common.Block) error {
 	if v.err != nil {
 		return v.err
 	}

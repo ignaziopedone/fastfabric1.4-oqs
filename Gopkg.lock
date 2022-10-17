@@ -680,7 +680,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f2ffd421680b0a3f7887501b3c6974bcf19217ecd301d0e2c9b681940ec363d5"
+  digest = "1:cbeb9cb3b34b212ee915695cb9a07d4b71d2281ef1b428d427ae8bdb5a9b3fd5"
   name = "github.com/syndtr/goleveldb"
   packages = [
     "leveldb",
@@ -697,7 +697,7 @@
     "leveldb/util",
   ]
   pruneopts = "NUT"
-  revision = "ae2bd5eed72d46b28834ec3f60db3a3ebedd8dbd"
+  revision = "64b5b1c739545ed311fb9d9924d19d188fabdc83"
 
 [[projects]]
   branch = "master"
@@ -771,15 +771,15 @@
   version = "v1.9.1"
 
 [[projects]]
-  branch = "master"
-  digest = "1:2e1733bde491e422f3c9cf7bf8b4cb3d11c867ad3017fec8897923f6106a3a51"
+  branch = "release-branch.go1.14"
+  digest = "1:7337c59380bcc76b123b691534249b30950a5b6ee63107c7818e24153c0bcaa6"
   name = "golang.org/x/crypto"
   packages = [
     "sha3",
     "ssh/terminal",
   ]
   pruneopts = "NUT"
-  revision = "e3636079e1a4c1f337f212cc5cd2aca108f6c900"
+  revision = "69ecbb4d6d5dab05e49161c6e77ea40a030884e1"
 
 [[projects]]
   digest = "1:a019befaac3480235e0db34bc38f5e90baefe615795eb1e5adc4633baa3f0841"
@@ -819,15 +819,16 @@
   revision = "1d60e4601c6fd243af51cc01ddf169918a5407ca"
 
 [[projects]]
-  branch = "master"
-  digest = "1:847ffe30bb2463c17bf12bac2558b63f5dc104fd5920c8adf8c150a08cd176fb"
+  branch = "release-branch.go1.14-std"
+  digest = "1:6370db18e9c85d5415da09fb28450b84b1a282ef6acc9d36524906a711866f0d"
   name = "golang.org/x/sys"
   packages = [
+    "cpu",
     "unix",
     "windows",
   ]
   pruneopts = "NUT"
-  revision = "af653ce8b74f808d092db8ca9741fbb63d2a469d"
+  revision = "915c9c3d4ccf72b2ceac5e8303d722b16b699366"
 
 [[projects]]
   digest = "1:8a12cbc891b7130d3f660f8a309e5c0b083f831e6ac38cdaa1f12e63c12d6bea"
@@ -865,23 +866,26 @@
   version = "v0.3.0"
 
 [[projects]]
-  digest = "1:0a25e2d158566f94027c0eeb72e1d34b0cfba5b8b51dc7c5b1bb04c2d437898b"
+  branch = "release-branch.go1.14"
+  digest = "1:b8c0ebe25da393d35060d76c38af904d5689eb63de8b76898747c641aff4c2df"
   name = "golang.org/x/tools"
   packages = [
     "cmd/goimports",
     "go/ast/astutil",
     "go/gcexportdata",
-    "go/internal/cgo",
     "go/internal/gcimporter",
+    "go/internal/packagesdriver",
     "go/packages",
     "go/types/typeutil",
-    "imports",
     "internal/fastwalk",
     "internal/gopathwalk",
+    "internal/imports",
+    "internal/module",
     "internal/semver",
+    "internal/span",
   ]
   pruneopts = "NUT"
-  revision = "f60e5f99f0816fc2d9ecb338008ea420248d2943"
+  revision = "c00d67ef29d03e4dd86a6fb6a75dba1b71a5e294"
 
 [[projects]]
   branch = "master"

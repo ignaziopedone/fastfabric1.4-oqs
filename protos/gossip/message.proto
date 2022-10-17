@@ -9,7 +9,6 @@ option go_package = "github.com/hyperledger/fabric/protos/gossip" ;
 package gossip;
 
 import "common/collection.proto";
-import "common/common.proto";
 
 // Gossip
 service Gossip {
@@ -243,8 +242,9 @@ message PrivateDataMessage {
 
 // Payload contains a block
 message Payload {
-    common.Block  data                  = 1;
-    repeated bytes private_data = 2;
+    uint64 seq_num              = 1;
+    bytes data                  = 2;
+    repeated bytes private_data = 3;
 }
 
 // PrivatePayload payload to encapsulate private

@@ -9,8 +9,6 @@ package channel
 import (
 	"bytes"
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
-	"github.com/hyperledger/fabric/fastfabric/config"
 	"reflect"
 	"strconv"
 	"sync"
@@ -146,7 +144,8 @@ type gossipChannel struct {
 	pkiID                     common.PKIidType
 	selfOrg                   api.OrgIdentityType
 	stopChan                  chan struct{}
-	stateInfoMsg              *proto.SignedGossipMessage
+	selfStateInfoMsg          *proto.GossipMessage
+	selfStateInfoSignedMsg    *proto.SignedGossipMessage
 	orgs                      []api.OrgIdentityType
 	joinMsg                   api.JoinChannelMessage
 	blockMsgStore             msgstore.MessageStore
@@ -210,7 +209,7 @@ func NewGossipChannel(pkiID common.PKIidType, org api.OrgIdentityType, mcs api.M
 	gc.blocksPuller = gc.createBlockPuller()
 
 	seqNumFromMsg := func(m interface{}) string {
-		return fmt.Sprintf("%d", m.(*proto.SignedGossipMessage).GetDataMsg().Payload.Data.Header.Number)
+		return fmt.Sprintf("%d", m.(*proto.SignedGossipMessage).GetDataMsg().Payload.SeqNum)
 	}
 	gc.blockMsgStore = msgstore.NewMessageStoreExpirable(comparator, func(m interface{}) {
 		gc.logger.Debugf("Removing %s from the message store", seqNumFromMsg(m))
@@ -267,6 +266,11 @@ func NewGossipChannel(pkiID common.PKIidType, org api.OrgIdentityType, mcs api.M
 		return true
 	}
 	gc.stateInfoMsgStore = newStateInfoCache(gc.GetConf().StateInfoCacheSweepInterval, hashPeerExpiredInMembership, verifyStateInfoMsg)
+
+	// Setup a plain state info message at startup, just to have all required fields populated
+	// when this gossip channel is created
+	gc.updateProperties(1, nil, false)
+	gc.setupSignedStateInfoMessage()
 
 	ttl := adapter.GetConf().MsgExpirationTimeout
 	pol := proto.NewGossipMessageComparator(0)
@@ -326,7 +330,7 @@ func (gc *gossipChannel) periodicalInvocation(fn func(), c <-chan time.Time) {
 func (gc *gossipChannel) Self() *proto.SignedGossipMessage {
 	gc.RLock()
 	defer gc.RUnlock()
-	return gc.stateInfoMsg
+	return gc.selfStateInfoSignedMsg
 }
 
 // LeaveChannel makes the peer leave the channel
@@ -338,11 +342,12 @@ func (gc *gossipChannel) LeaveChannel() {
 
 	var chaincodes []*proto.Chaincode
 	var height uint64
-	if prevMsg := gc.stateInfoMsg; prevMsg != nil {
+	if prevMsg := gc.selfStateInfoMsg; prevMsg != nil {
 		chaincodes = prevMsg.GetStateInfo().Properties.Chaincodes
 		height = prevMsg.GetStateInfo().Properties.LedgerHeight
 	}
 	gc.updateProperties(height, chaincodes, true)
+	atomic.StoreInt32(&gc.shouldGossipStateInfo, int32(1))
 }
 
 func (gc *gossipChannel) hasLeftChannel() bool {
@@ -396,13 +401,42 @@ func (gc *gossipChannel) publishStateInfo() {
 	if atomic.LoadInt32(&gc.shouldGossipStateInfo) == int32(0) {
 		return
 	}
-	gc.RLock()
-	stateInfoMsg := gc.stateInfoMsg
-	gc.RUnlock()
-	gc.Gossip(stateInfoMsg)
-	if len(gc.GetMembership()) > 0 {
-		atomic.StoreInt32(&gc.shouldGossipStateInfo, int32(0))
+
+	if len(gc.GetMembership()) == 0 {
+		gc.logger.Debugf("Empty membership, no one to publish state info to")
+		return
 	}
+
+	gc.publishSignedStateInfoMessage()
+	atomic.StoreInt32(&gc.shouldGossipStateInfo, int32(0))
+}
+
+func (gc *gossipChannel) publishSignedStateInfoMessage() {
+	stateInfoMsg, err := gc.setupSignedStateInfoMessage()
+	if err != nil {
+		gc.logger.Errorf("Failed creating signed state info message: %v", err)
+		return
+	}
+	gc.stateInfoMsgStore.Add(stateInfoMsg)
+	gc.Gossip(stateInfoMsg)
+}
+
+func (gc *gossipChannel) setupSignedStateInfoMessage() (*proto.SignedGossipMessage, error) {
+	gc.RLock()
+	msg := gc.selfStateInfoMsg
+	gc.RUnlock()
+
+	stateInfoMsg, err := gc.Sign(msg)
+	if err != nil {
+		gc.logger.Error("Failed signing message:", err)
+		return nil, err
+	}
+
+	gc.Lock()
+	gc.selfStateInfoSignedMsg = stateInfoMsg
+	gc.Unlock()
+
+	return stateInfoMsg, nil
 }
 
 func (gc *gossipChannel) createBlockPuller() pull.Mediator {
@@ -425,7 +459,7 @@ func (gc *gossipChannel) createBlockPuller() pull.Mediator {
 			gc.logger.Warning("Non-data block or with no payload")
 			return ""
 		}
-		return fmt.Sprintf("%d", dataMsg.Payload.Data.Header.Number)
+		return fmt.Sprintf("%d", dataMsg.Payload.SeqNum)
 	}
 	adapter := &pull.PullAdapter{
 		Sndr:        gc,
@@ -603,11 +637,9 @@ func (gc *gossipChannel) HandleMessage(msg proto.ReceivedMessage) {
 			if !gc.blockMsgStore.CheckValid(msg.GetGossipMessage()) {
 				return
 			}
-			if config.IsFastPeer {
-				if !gc.verifyBlock(m.GossipMessage, msg.GetConnectionInfo().ID) {
-					gc.logger.Warning("Failed verifying block", m.GetDataMsg().Payload.Data.Header.Number)
-					return
-				}
+			if !gc.verifyBlock(m.GossipMessage, msg.GetConnectionInfo().ID) {
+				gc.logger.Warning("Failed verifying block", m.GetDataMsg().Payload.SeqNum)
+				return
 			}
 			gc.Lock()
 			added = gc.blockMsgStore.Add(msg.GetGossipMessage())
@@ -773,9 +805,9 @@ func (gc *gossipChannel) verifyBlock(msg *proto.GossipMessage, sender common.PKI
 		gc.logger.Warning("Received empty payload from", sender)
 		return false
 	}
-	seqNum := payload.Data.Header.Number
-	block := cached.WrapBlock(payload.Data)
-	err := gc.mcs.VerifyBlock(msg.Channel, seqNum, block)
+	seqNum := payload.SeqNum
+	rawBlock := payload.Data
+	err := gc.mcs.VerifyBlock(msg.Channel, seqNum, rawBlock)
 	if err != nil {
 		gc.logger.Warningf("Received fabricated block from %v in DataUpdate: %+v", sender, errors.WithStack(err))
 		return false
@@ -879,35 +911,43 @@ func (gc *gossipChannel) UpdateLedgerHeight(height uint64) {
 
 	var chaincodes []*proto.Chaincode
 	var leftChannel bool
-	if prevMsg := gc.stateInfoMsg; prevMsg != nil {
+	if prevMsg := gc.selfStateInfoMsg; prevMsg != nil {
 		leftChannel = prevMsg.GetStateInfo().Properties.LeftChannel
 		chaincodes = prevMsg.GetStateInfo().Properties.Chaincodes
 	}
 	gc.updateProperties(height, chaincodes, leftChannel)
+	atomic.StoreInt32(&gc.shouldGossipStateInfo, int32(1))
 }
 
 // UpdateChaincodes updates the chaincodes the peer publishes
 // to other peers in the channel
 func (gc *gossipChannel) UpdateChaincodes(chaincodes []*proto.Chaincode) {
+	// Always publish the signed state info message regardless.
+	// We do this because we have to update our data structures
+	// with the new chaincodes installed/instantiated, to be able to
+	// respond to discovery requests, no matter if we see other peers
+	// in the membership, or do not see them.
+
+	defer gc.publishSignedStateInfoMessage()
+
 	gc.Lock()
 	defer gc.Unlock()
 
 	var ledgerHeight uint64 = 1
 	var leftChannel bool
-	if prevMsg := gc.stateInfoMsg; prevMsg != nil {
+	if prevMsg := gc.selfStateInfoMsg; prevMsg != nil {
 		ledgerHeight = prevMsg.GetStateInfo().Properties.LedgerHeight
 		leftChannel = prevMsg.GetStateInfo().Properties.LeftChannel
 	}
 	gc.updateProperties(ledgerHeight, chaincodes, leftChannel)
+	atomic.StoreInt32(&gc.shouldGossipStateInfo, int32(1))
 }
 
 // UpdateStateInfo updates this channel's StateInfo message
 // that is periodically published
-func (gc *gossipChannel) updateStateInfo(msg *proto.SignedGossipMessage) {
-	gc.stateInfoMsgStore.Add(msg)
+func (gc *gossipChannel) updateStateInfo(msg *proto.GossipMessage) {
 	gc.ledgerHeight = msg.GetStateInfo().Properties.LedgerHeight
-	gc.stateInfoMsg = msg
-	atomic.StoreInt32(&gc.shouldGossipStateInfo, int32(1))
+	gc.selfStateInfoMsg = msg
 }
 
 func (gc *gossipChannel) updateProperties(ledgerHeight uint64, chaincodes []*proto.Chaincode, leftChannel bool) {
@@ -932,12 +972,7 @@ func (gc *gossipChannel) updateProperties(ledgerHeight uint64, chaincodes []*pro
 		},
 	}
 
-	msg, err := gc.Sign(m)
-	if err != nil {
-		gc.logger.Error("Failed signing message:", err)
-		return
-	}
-	gc.updateStateInfo(msg)
+	gc.updateStateInfo(m)
 }
 
 func newStateInfoCache(sweepInterval time.Duration, hasExpired func(interface{}) bool, verifyFunc membershipPredicate) *stateInfoCache {

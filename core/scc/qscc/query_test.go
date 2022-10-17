@@ -17,7 +17,6 @@ package qscc
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -329,7 +328,7 @@ func TestQueryGeneratedBlock(t *testing.T) {
 	}
 }
 
-func addBlockForTesting(t *testing.T, chainid string) *cached.Block {
+func addBlockForTesting(t *testing.T, chainid string) *common.Block {
 	ledger := peer.GetLedger(chainid)
 	defer ledger.Close()
 

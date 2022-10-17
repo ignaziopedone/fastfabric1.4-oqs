@@ -76,16 +76,16 @@ func (mc *msgComparator) identityInvalidationPolicy(thisIdentityMsg *PeerIdentit
 }
 
 func (mc *msgComparator) dataInvalidationPolicy(thisDataMsg *DataMessage, thatDataMsg *DataMessage) common.InvalidationResult {
-	if thisDataMsg.Payload.Data.Header.Number == thatDataMsg.Payload.Data.Header.Number {
+	if thisDataMsg.Payload.SeqNum == thatDataMsg.Payload.SeqNum {
 		return common.MessageInvalidated
 	}
 
-	diff := abs(thisDataMsg.Payload.Data.Header.Number, thatDataMsg.Payload.Data.Header.Number)
+	diff := abs(thisDataMsg.Payload.SeqNum, thatDataMsg.Payload.SeqNum)
 	if diff <= uint64(mc.dataBlockStorageSize) {
 		return common.MessageNoAction
 	}
 
-	if thisDataMsg.Payload.Data.Header.Number > thatDataMsg.Payload.Data.Header.Number {
+	if thisDataMsg.Payload.SeqNum > thatDataMsg.Payload.SeqNum {
 		return common.MessageInvalidates
 	}
 	return common.MessageInvalidated
@@ -494,8 +494,7 @@ type SignedGossipMessage struct {
 }
 
 func (p *Payload) toString() string {
-	block, _ := proto.Marshal(p.Data)
-	return fmt.Sprintf("Block message: {Data: %d bytes, seq: %d}", len(block), p.Data.Header.Number)
+	return fmt.Sprintf("Block message: {Data: %d bytes, seq: %d}", len(p.Data), p.SeqNum)
 }
 
 func (du *DataUpdate) toString() string {

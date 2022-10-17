@@ -9,14 +9,15 @@ package historyleveldb
 import (
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
+	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/history/historydb"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/util"
-	"github.com/hyperledger/fabric/fastfabric/cached"
-	"github.com/hyperledger/fabric/fastfabric/statedb"
 	"github.com/hyperledger/fabric/protos/common"
+	putils "github.com/hyperledger/fabric/protos/utils"
 )
 
 var logger historydbLogger = flogging.MustGetLogger("historyleveldb")
@@ -36,15 +37,14 @@ type historydbLogger interface {
 
 // HistoryDBProvider implements interface HistoryDBProvider
 type HistoryDBProvider struct {
-	dbProvider *statedb.Provider
+	dbProvider *leveldbhelper.Provider
 }
 
 // NewHistoryDBProvider instantiates HistoryDBProvider
 func NewHistoryDBProvider() *HistoryDBProvider {
 	dbPath := ledgerconfig.GetHistoryLevelDBPath()
 	logger.Debugf("constructing HistoryDBProvider dbPath=%s", dbPath)
-	dbProvider := statedb.NewProvider(dbPath)
-
+	dbProvider := leveldbhelper.NewProvider(&leveldbhelper.Conf{DBPath: dbPath})
 	return &HistoryDBProvider{dbProvider}
 }
 
@@ -60,12 +60,12 @@ func (provider *HistoryDBProvider) Close() {
 
 // historyDB implements HistoryDB interface
 type historyDB struct {
-	db     *statedb.DBHandle
+	db     *leveldbhelper.DBHandle
 	dbName string
 }
 
 // newHistoryDB constructs an instance of HistoryDB
-func newHistoryDB(db *statedb.DBHandle, dbName string) *historyDB {
+func newHistoryDB(db *leveldbhelper.DBHandle, dbName string) *historyDB {
 	return &historyDB{db, dbName}
 }
 
@@ -81,13 +81,13 @@ func (historyDB *historyDB) Close() {
 }
 
 // Commit implements method in HistoryDB interface
-func (historyDB *historyDB) Commit(block *cached.Block) error {
+func (historyDB *historyDB) Commit(block *common.Block) error {
 
 	blockNo := block.Header.Number
 	//Set the starting tranNo to 0
 	var tranNo uint64
 
-	dbBatch := statedb.NewUpdateBatch()
+	dbBatch := leveldbhelper.NewUpdateBatch()
 
 	logger.Debugf("Channel [%s]: Updating history database for blockNo [%v] with [%d] transactions",
 		historyDB.dbName, blockNo, len(block.Data.Data))
@@ -96,7 +96,7 @@ func (historyDB *historyDB) Commit(block *cached.Block) error {
 	txsFilter := util.TxValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
 
 	// write each tran's write set to history db
-	for i := range block.Data.Data {
+	for _, envBytes := range block.Data.Data {
 
 		// If the tran is marked as invalid, skip it
 		if txsFilter.IsInvalid(int(tranNo)) {
@@ -106,17 +106,17 @@ func (historyDB *historyDB) Commit(block *cached.Block) error {
 			continue
 		}
 
-		env, err := block.UnmarshalSpecificEnvelope(i)
+		env, err := putils.GetEnvelopeFromBlock(envBytes)
 		if err != nil {
 			return err
 		}
 
-		payload, err := env.UnmarshalPayload()
+		payload, err := putils.GetPayload(env)
 		if err != nil {
 			return err
 		}
 
-		chdr, err := payload.Header.UnmarshalChannelHeader()
+		chdr, err := putils.UnmarshalChannelHeader(payload.Header.ChannelHeader)
 		if err != nil {
 			return err
 		}
@@ -124,13 +124,17 @@ func (historyDB *historyDB) Commit(block *cached.Block) error {
 		if common.HeaderType(chdr.Type) == common.HeaderType_ENDORSER_TRANSACTION {
 
 			// extract actions from the envelope message
-			ca, err := env.GetChaincodeAction()
+			respPayload, err := putils.GetActionFromEnvelope(envBytes)
 			if err != nil {
 				return err
 			}
 
-			txRWSet, err := ca.UnmarshalRwSet()
-			if err != nil {
+			//preparation for extracting RWSet from transaction
+			txRWSet := &rwsetutil.TxRwSet{}
+
+			// Get the Result from the Action and then Unmarshal
+			// it into a TxReadWriteSet using custom unmarshalling
+			if err = txRWSet.FromProtoBytes(respPayload.Results); err != nil {
 				return err
 			}
 			// for each transaction, loop through the namespaces and writesets

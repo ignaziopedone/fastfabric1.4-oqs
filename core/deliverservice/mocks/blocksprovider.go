@@ -58,7 +58,7 @@ func (mock *MockGossipServiceAdapter) AddPayloadCount() int32 {
 
 // Gossip message to the all peers
 func (mock *MockGossipServiceAdapter) Gossip(msg *gossip_proto.GossipMessage) {
-	mock.GossipBlockDisseminations <- msg.GetDataMsg().Payload.Data.Header.Number
+	mock.GossipBlockDisseminations <- msg.GetDataMsg().Payload.SeqNum
 }
 
 // MockBlocksDeliverer mocking structure of BlocksDeliverer interface to initialize

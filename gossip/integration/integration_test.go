@@ -8,7 +8,6 @@ package integration
 
 import (
 	"fmt"
-	common2 "github.com/hyperledger/fabric/protos/common"
 	"net"
 	"strings"
 	"testing"
@@ -21,7 +20,7 @@ import (
 	"github.com/hyperledger/fabric/gossip/metrics"
 	"github.com/hyperledger/fabric/gossip/util"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	"github.com/hyperledger/fabric/msp/mgmt/testtools"
+	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -57,13 +56,13 @@ func TestNewGossipCryptoService(t *testing.T) {
 	peerIdentity, _ := mgmt.GetLocalSigningIdentityOrPanic().Serialize()
 	gossipMetrics := metrics.NewGossipMetrics(&disabled.Provider{})
 	g1, err := NewGossipComponent(peerIdentity, endpoint1, s1, secAdv, cryptSvc,
-		defaultSecureDialOpts, nil, gossipMetrics)
+		defaultSecureDialOpts, nil, gossipMetrics, nil)
 	assert.NoError(t, err)
 	g2, err := NewGossipComponent(peerIdentity, endpoint2, s2, secAdv, cryptSvc,
-		defaultSecureDialOpts, nil, gossipMetrics, endpoint1)
+		defaultSecureDialOpts, nil, gossipMetrics, nil, endpoint1)
 	assert.NoError(t, err)
 	g3, err := NewGossipComponent(peerIdentity, endpoint3, s3, secAdv, cryptSvc,
-		defaultSecureDialOpts, nil, gossipMetrics, endpoint1)
+		defaultSecureDialOpts, nil, gossipMetrics, nil, endpoint1)
 	assert.NoError(t, err)
 	defer g1.Stop()
 	defer g2.Stop()
@@ -103,7 +102,7 @@ func (s *cryptoService) GetPKIidOfCert(peerIdentity api.PeerIdentityType) common
 	return common.PKIidType(peerIdentity)
 }
 
-func (s *cryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock *common2.Block) error {
+func (s *cryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock []byte) error {
 	return nil
 }
 

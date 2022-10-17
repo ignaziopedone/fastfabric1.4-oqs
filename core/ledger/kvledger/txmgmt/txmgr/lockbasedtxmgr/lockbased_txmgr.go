@@ -7,7 +7,6 @@ package lockbasedtxmgr
 
 import (
 	"bytes"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"sync"
 
 	"github.com/golang/protobuf/proto"
@@ -17,12 +16,14 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/pvtstatepurgemgmt"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/queryutil"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/txmgr"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/validator"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/validator/valimpl"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/hyperledger/fabric/core/ledger/util"
+	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 )
@@ -44,7 +45,7 @@ type LockBasedTxMgr struct {
 }
 
 type current struct {
-	block     *cached.Block
+	block     *common.Block
 	batch     *privacyenabledstate.UpdateBatch
 	listeners []ledger.StateListener
 }
@@ -275,7 +276,7 @@ func (uniquePvtData uniquePvtDataMap) updateUsingPvtWrite(pvtWrite *kvrwset.KVWr
 		uniquePvtData[hashedCompositeKey] =
 			&privacyenabledstate.PvtKVWrite{
 				Key:      pvtWrite.Key,
-				IsDelete: pvtWrite.IsDelete,
+				IsDelete: rwsetutil.IsKVWriteDelete(pvtWrite),
 				Value:    pvtWrite.Value,
 				Version:  ver,
 			}

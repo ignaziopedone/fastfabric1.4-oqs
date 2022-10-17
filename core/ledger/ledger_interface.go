@@ -8,7 +8,6 @@ package ledger
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-lib-go/healthz"
@@ -253,7 +252,7 @@ type TxMissingPvtDataMap map[uint64][]*MissingPvtData
 // BlockAndPvtData encapsulates the block and a map that contains the tuples <seqInBlock, *TxPvtData>
 // The map is expected to contain the entries only for the transactions that has associated pvt data
 type BlockAndPvtData struct {
-	Block          *cached.Block
+	Block          *common.Block
 	PvtData        TxPvtDataMap
 	MissingPvtData TxMissingPvtDataMap
 }

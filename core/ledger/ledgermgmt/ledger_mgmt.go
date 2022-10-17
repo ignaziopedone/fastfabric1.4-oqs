@@ -8,7 +8,6 @@ package ledgermgmt
 
 import (
 	"bytes"
-	"github.com/hyperledger/fabric/protos/common"
 	"sync"
 
 	"github.com/hyperledger/fabric/common/flogging"
@@ -19,6 +18,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
 	"github.com/hyperledger/fabric/core/ledger/customtx"
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/utils"
 	"github.com/pkg/errors"
 )

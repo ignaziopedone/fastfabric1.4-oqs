@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	oqs "github.com/hyperledger/fabric/external_crypto"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -140,8 +139,6 @@ func (ks *fileBasedKeyStore) GetKey(ski []byte) (bccsp.Key, error) {
 			return &ecdsaPrivateKey{key.(*ecdsa.PrivateKey)}, nil
 		case *rsa.PrivateKey:
 			return &rsaPrivateKey{key.(*rsa.PrivateKey)}, nil
-		case *oqs.SecretKey:
-			return &oqsPrivateKey{key.(*oqs.SecretKey)}, nil
 		default:
 			return nil, errors.New("Secret key type not recognized")
 		}
@@ -157,8 +154,6 @@ func (ks *fileBasedKeyStore) GetKey(ski []byte) (bccsp.Key, error) {
 			return &ecdsaPublicKey{key.(*ecdsa.PublicKey)}, nil
 		case *rsa.PublicKey:
 			return &rsaPublicKey{key.(*rsa.PublicKey)}, nil
-		case *oqs.PublicKey:
-			return &oqsPublicKey{key.(*oqs.PublicKey)}, nil
 		default:
 			return nil, errors.New("Public key type not recognized")
 		}
@@ -218,19 +213,6 @@ func (ks *fileBasedKeyStore) StoreKey(k bccsp.Key) (err error) {
 			return fmt.Errorf("Failed storing AES key [%s]", err)
 		}
 
-	case *oqsPublicKey:
-		kk := k.(*oqsPublicKey)
-		err = ks.storePublicKey(hex.EncodeToString(k.SKI()), kk.pubKey)
-		if err != nil {
-			return fmt.Errorf("Failed storing OQS public key [%s]", err)
-		}
-	case *oqsPrivateKey:
-		kk := k.(*oqsPrivateKey)
-		err = ks.storePrivateKey(hex.EncodeToString(k.SKI()), kk.privKey)
-		if err != nil {
-			return fmt.Errorf("Failed storing OQS key [%s]", err)
-		}
-
 	default:
 		return fmt.Errorf("Key type not reconigned [%s]", k)
 	}
@@ -247,19 +229,16 @@ func (ks *fileBasedKeyStore) searchKeystoreForSKI(ski []byte) (k bccsp.Key, err 
 		}
 
 		if f.Size() > (1 << 16) { //64k, somewhat arbitrary limit, considering even large RSA keys
-			logger.Debugf("Skipping large key file", f.Name())
 			continue
 		}
 
 		raw, err := ioutil.ReadFile(filepath.Join(ks.path, f.Name()))
 		if err != nil {
-			logger.Debugf("Skipping unreadable key file [%s]", f.Name())
 			continue
 		}
 
 		key, err := utils.PEMtoPrivateKey(raw, ks.pwd)
 		if err != nil {
-			logger.Debugf("Skipping unparseable key file [%s]", f.Name())
 			continue
 		}
 
@@ -269,7 +248,6 @@ func (ks *fileBasedKeyStore) searchKeystoreForSKI(ski []byte) (k bccsp.Key, err 
 		case *rsa.PrivateKey:
 			k = &rsaPrivateKey{key.(*rsa.PrivateKey)}
 		default:
-			logger.Debugf("Skipping unknown key type in file [%s]", f.Name())
 			continue
 		}
 
@@ -381,14 +359,14 @@ func (ks *fileBasedKeyStore) loadPublicKey(alias string) (interface{}, error) {
 		return nil, err
 	}
 
-	publicKey, err := utils.PEMtoPublicKey(raw, ks.pwd)
+	privateKey, err := utils.PEMtoPublicKey(raw, ks.pwd)
 	if err != nil {
-		logger.Errorf("Failed parsing public key [%s]: [%s].", alias, err.Error())
+		logger.Errorf("Failed parsing private key [%s]: [%s].", alias, err.Error())
 
 		return nil, err
 	}
 
-	return publicKey, nil
+	return privateKey, nil
 }
 
 func (ks *fileBasedKeyStore) loadKey(alias string) ([]byte, error) {

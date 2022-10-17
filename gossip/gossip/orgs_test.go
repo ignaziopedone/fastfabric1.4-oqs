@@ -9,7 +9,6 @@ package gossip
 import (
 	"bytes"
 	"fmt"
-	common2 "github.com/hyperledger/fabric/protos/common"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -71,7 +70,7 @@ func (*configurableCryptoService) GetPKIidOfCert(peerIdentity api.PeerIdentityTy
 
 // VerifyBlock returns nil if the block is properly signed,
 // else returns error
-func (*configurableCryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock *common2.Block) error {
+func (*configurableCryptoService) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock []byte) error {
 	return nil
 }
 
@@ -126,10 +125,12 @@ func newGossipInstanceWithGRPCWithExternalEndpoint(id int, port int, gRPCServer 
 		AliveExpirationTimeout:       discoveryConfig.AliveExpirationTimeout,
 		AliveExpirationCheckInterval: discoveryConfig.AliveExpirationCheckInterval,
 		ReconnectInterval:            discoveryConfig.ReconnectInterval,
+		MaxConnectionAttempts:        discoveryConfig.MaxConnectionAttempts,
+		MsgExpirationFactor:          discoveryConfig.MsgExpirationFactor,
 	}
 	selfID := api.PeerIdentityType(conf.InternalEndpoint)
 	g := NewGossipService(conf, gRPCServer.Server(), mcs, mcs, selfID,
-		secureDialOpts, metrics.NewGossipMetrics(&disabled.Provider{}))
+		secureDialOpts, metrics.NewGossipMetrics(&disabled.Provider{}), nil)
 	go func() {
 		gRPCServer.Start()
 	}()

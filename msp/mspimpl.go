@@ -13,12 +13,12 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/bccsp/signer"
 	"github.com/hyperledger/fabric/bccsp/utils"
-	oqs "github.com/hyperledger/fabric/external_crypto"
 	m "github.com/hyperledger/fabric/protos/msp"
 	"github.com/pkg/errors"
 )
@@ -163,29 +163,22 @@ func (msp *bccspmsp) getCertFromPem(idBytes []byte) (*x509.Certificate, error) {
 	return cert, nil
 }
 
-func (msp *bccspmsp) getIdentityFromConf(idBytes []byte) (mspId Identity, pK bccsp.Key, qPK bccsp.Key, err error) {
+func (msp *bccspmsp) getIdentityFromConf(idBytes []byte) (Identity, bccsp.Key, error) {
 	// get a cert
 	cert, err := msp.getCertFromPem(idBytes)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	// get the public key in the right format
 	certPubK, err := msp.bccsp.KeyImport(cert, &bccsp.X509PublicKeyImportOpts{Temporary: true})
 
-	// also attempt to get an alternate (aka, post-quantum) key
-	// If not present, this will return nil with no error.
-	certQPubK, err := msp.bccsp.KeyImport(cert, &bccsp.X509AltPublicKeyImportOpts{Temporary: true})
-	if certQPubK != nil {
-		mspLogger.Debug("Successfully imported quantum-safe public key from certificate")
-	}
-
-	mspId, err = newIdentity(cert, certPubK, certQPubK, msp)
+	mspId, err := newIdentity(cert, certPubK, msp)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	return mspId, certPubK, certQPubK, nil
+	return mspId, certPubK, nil
 }
 
 func (msp *bccspmsp) getSigningIdentityFromConf(sidInfo *m.SigningIdentityInfo) (SigningIdentity, error) {
@@ -194,7 +187,7 @@ func (msp *bccspmsp) getSigningIdentityFromConf(sidInfo *m.SigningIdentityInfo) 
 	}
 
 	// Extract the public part of the identity
-	idPub, pubKey, qPubKey, err := msp.getIdentityFromConf(sidInfo.PublicSigner)
+	idPub, pubKey, err := msp.getIdentityFromConf(sidInfo.PublicSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -215,25 +208,13 @@ func (msp *bccspmsp) getSigningIdentityFromConf(sidInfo *m.SigningIdentityInfo) 
 		}
 	}
 
-	// If a quantum-safe public key was provided, extract the private key information and create a hybrid signer.
-	var qPrivKey bccsp.Key = nil
-	if qPubKey != nil {
-		qPrivKey, err = msp.bccsp.GetKey(qPubKey.SKI())
-		if err != nil {
-			return nil, err
-		}
-	}
-	if qPrivKey != nil {
-		mspLogger.Debug("Successfully extracted quantum-safe private key")
-	}
-
 	// get the peer signer
-	peerSigner, err := signer.New(msp.bccsp, privKey, qPrivKey)
+	peerSigner, err := signer.New(msp.bccsp, privKey)
 	if err != nil {
 		return nil, errors.WithMessage(err, "getIdentityFromBytes error: Failed initializing bccspCryptoSigner")
 	}
 
-	return newSigningIdentity(idPub.(*identity).cert, idPub.(*identity).pk, qPubKey, peerSigner, msp)
+	return newSigningIdentity(idPub.(*identity).cert, idPub.(*identity).pk, peerSigner, msp)
 }
 
 // Setup sets up the internal data structures
@@ -419,17 +400,7 @@ func (msp *bccspmsp) deserializeIdentityInternal(serializedIdentity []byte) (Ide
 		return nil, errors.WithMessage(err, "failed to import certificate's public key")
 	}
 
-	// Attempt to import an alternate quantum-safe key
-	// If this is a classical (non-hybrid) cert, this will return a nil key without error.
-	qPub, err := msp.bccsp.KeyImport(cert, &bccsp.X509AltPublicKeyImportOpts{Temporary: true})
-	if err != nil {
-		return nil, errors.WithMessage(err, "found an alternate public key but failed to import it")
-	}
-	if qPub != nil {
-		mspLogger.Debug("Successfully imported quantum-safe public key after deserialization.")
-	}
-
-	return newIdentity(cert, pub, qPub, msp)
+	return newIdentity(cert, pub, msp)
 }
 
 // SatisfiesPrincipal returns null if the identity matches the principal or an error otherwise
@@ -742,15 +713,6 @@ func (msp *bccspmsp) getUniqueValidationChain(cert *x509.Certificate, opts x509.
 		return nil, errors.Errorf("this MSP only supports a single validation chain, got %d", len(validationChains))
 	}
 
-	// In addition, check that the validation chain has quantum-safe signatures, where required.
-	// Ideally, this would happen in the core x509 library (cert.Verify, above), but instead we run it in the
-	// local x509 library for post-quantum crypto, external_crypto (oqs.Validate())
-	// If the root CA does not have a post-quantum key extension, this Validation will return immediately without error.
-	err = oqs.Validate(validationChains[0])
-	if err != nil {
-		return nil, errors.WithMessage(err, "the supplied identity does not have a valid post-quantum certificate")
-	}
-
 	return validationChains[0], nil
 }
 
@@ -861,6 +823,10 @@ func (msp *bccspmsp) IsWellFormed(identity *m.SerializedIdentity) error {
 	cert, err := x509.ParseCertificate(bl.Bytes)
 	if err != nil {
 		return err
+	}
+
+	if !isECDSASignedCert(cert) {
+		return nil
 	}
 
 	return isIdentitySignedInCanonicalForm(cert.Signature, identity.Mspid, identity.IdBytes)

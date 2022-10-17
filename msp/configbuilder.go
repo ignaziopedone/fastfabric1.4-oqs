@@ -146,7 +146,6 @@ func SetupBCCSPKeystoreConfig(bccspConfig *factory.FactoryOpts, keystoreDir stri
 		// Only override the KeyStorePath if it was left empty
 		if bccspConfig.SwOpts.FileKeystore == nil ||
 			bccspConfig.SwOpts.FileKeystore.KeyStorePath == "" {
-			bccspConfig.SwOpts.Ephemeral = false
 			bccspConfig.SwOpts.FileKeystore = &factory.FileKeystoreOpts{KeyStorePath: keystoreDir}
 		}
 	}
@@ -184,24 +183,12 @@ func GetLocalMspConfig(dir string, bccspConfig *factory.FactoryOpts, ID string) 
 	}
 
 	/* FIXME: for now we're making the following assumptions
-	1) signing certs are ordered and there are no extra certs in this directory:
-	   should have getPemMaterialFromDir return the content with file names in a hash map, or similar
+	1) there is exactly one signing cert
 	2) BCCSP's KeyStore has the private key that matches SKI of
 	   signing cert
 	*/
 
-	var sigid *msp.SigningIdentityInfo
-	if len(signcert) == 2 {
-
-		sigid = &msp.SigningIdentityInfo{
-			PublicSigner:         signcert[0],
-			PrivateSigner:        nil,
-			QuantumPublicSigner:  signcert[1],
-			QuantumPrivateSigner: nil,
-		}
-	} else {
-		sigid = &msp.SigningIdentityInfo{PublicSigner: signcert[0], PrivateSigner: nil}
-	}
+	sigid := &msp.SigningIdentityInfo{PublicSigner: signcert[0], PrivateSigner: nil}
 
 	return getMspConfig(dir, ID, sigid)
 }

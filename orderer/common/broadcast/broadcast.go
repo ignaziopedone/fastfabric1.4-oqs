@@ -66,46 +66,29 @@ type Handler struct {
 func (bh *Handler) Handle(srv ab.AtomicBroadcast_BroadcastServer) error {
 	addr := util.ExtractRemoteAddress(srv.Context())
 	logger.Debugf("Starting new broadcast loop for %s", addr)
-
-	msgs := make(chan *cb.Envelope, 1000)
-	var err error
-	go func() {
-		defer close(msgs)
-		for {
-			var msg *cb.Envelope
-			msg, err = srv.Recv()
-			if err == io.EOF {
-				logger.Debugf("Received EOF from %s, hangup", addr)
-				return
-			}
-			if err != nil {
-				logger.Warningf("Error reading from %s: %s", addr, err)
-				return
-			}
-			msgs <- msg
+	for {
+		msg, err := srv.Recv()
+		if err == io.EOF {
+			logger.Debugf("Received EOF from %s, hangup", addr)
+			return nil
 		}
-	}()
-
-	resps := make(chan *ab.BroadcastResponse, 1000)
-	go func() {
-		for msg := range msgs {
-			resps <- bh.ProcessMessage(msg, addr)
+		if err != nil {
+			logger.Warningf("Error reading from %s: %s", addr, err)
+			return err
 		}
-		close(resps)
-	}()
 
-	for resp := range resps {
-		e := srv.Send(resp)
+		resp := bh.ProcessMessage(msg, addr)
+		err = srv.Send(resp)
 		if resp.Status != cb.Status_SUCCESS {
-			return e
+			return err
 		}
 
-		if e != nil {
+		if err != nil {
 			logger.Warningf("Error sending to %s: %s", addr, err)
-			return e
+			return err
 		}
 	}
-	return err
+
 }
 
 type MetricsTracker struct {

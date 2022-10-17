@@ -9,14 +9,10 @@ package node
 import (
 	"context"
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/remote"
-	"github.com/hyperledger/fabric/fastfabric/stopwatch"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -79,7 +75,6 @@ import (
 	ccsupport "github.com/hyperledger/fabric/discovery/support/chaincode"
 	"github.com/hyperledger/fabric/discovery/support/config"
 	"github.com/hyperledger/fabric/discovery/support/gossip"
-	ffconfig "github.com/hyperledger/fabric/fastfabric/config"
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/msp"
@@ -108,21 +103,12 @@ const (
 )
 
 var chaincodeDevMode bool
-var benchmarkOutput string
-var cpuprofile string
-var storageAddress string
 
 func startCmd() *cobra.Command {
 	// Set the flags on the node start command.
 	flags := nodeStartCmd.Flags()
 	flags.BoolVarP(&chaincodeDevMode, "peer-chaincodedev", "", false,
 		"Whether peer in chaincode development mode")
-	flags.BoolVarP(&ffconfig.IsStorage, "isStorage", "s", false, "Defines if this node is a decoupled storage node")
-	flags.StringVar(&storageAddress, "storageAddr", "", "The address of the decoupled persistent storage node")
-	flags.BoolVarP(&ffconfig.IsEndorser, "isEndorser", "e", false, "Defines if this node is a decoupled endorser node")
-	flags.BoolVarP(&ffconfig.IsBenchmark, "isBenchmark", "b", false, "Runs the peer in benchmarking mode. Times between block commits are logged to the file specified with the --output (-o) flag.")
-	flags.StringVarP(&benchmarkOutput, "output", "o", "benchmark.log", "Specifies the benchmark out put location.")
-	flags.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to file")
 
 	return nodeStartCmd
 }
@@ -142,53 +128,6 @@ var nodeStartCmd = &cobra.Command{
 }
 
 func serve(args []string) error {
-	if ffconfig.IsBenchmark {
-		f, err := os.OpenFile(benchmarkOutput, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("Creating benchmarking log")
-		stopwatch.SetOutput("commit_benchmark", f)
-		defer stopwatch.Flush()
-		logger.Info("Running in benchmarking mode")
-	}
-
-	if ffconfig.IsEndorser {
-		ffconfig.IsFastPeer = false
-		logger.Info("starting as endorser")
-	}
-
-	if ffconfig.IsStorage {
-		ffconfig.IsFastPeer = false
-		logger.Info("starting as storage server")
-		remote.StartServer(storageAddress)
-	}
-
-	if !ffconfig.IsStorage && storageAddress != "" {
-		if err := remote.StartStoragePeerClient(storageAddress); err != nil {
-			panic(err)
-		}
-	}
-
-	//there is no storage peer defined
-	if !ffconfig.IsStorage && storageAddress == "" {
-		ffconfig.IsStorage = true
-		ffconfig.RegisterBlockStore = func(ledgerId string, blockStore interface{}) {
-		}
-	}
-
-	if cpuprofile != "" {
-		f, err := os.Create(cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("Creating a profile")
-		if err := pprof.StartCPUProfile(f); err != nil {
-			panic(err)
-		}
-		defer pprof.StopCPUProfile()
-	}
-
 	// currently the peer only works with the standard MSP
 	// because in certain scenarios the MSP has to make sure
 	// that from a single credential you only have a single 'identity'.
@@ -384,6 +323,7 @@ func serve(args []string) error {
 		serverConfig.SecOpts.Certificate,
 		comm.GetCredentialSupport().GetClientCertificate().Certificate,
 		serializedIdentity,
+		expirationLogger.Infof,
 		expirationLogger.Warnf, // This can be used to piggyback a metric event in the future
 		time.Now(),
 		time.AfterFunc)
@@ -906,11 +846,19 @@ func startAdminServer(peerListenAddr string, peerServer *grpc.Server, baseServer
 func secureDialOpts() []grpc.DialOption {
 	var dialOpts []grpc.DialOption
 	// set max send/recv msg sizes
+	maxRecvMsgSize := comm.DefaultMaxRecvMsgSize
+	if viper.IsSet("peer.maxRecvMsgSize") {
+		maxRecvMsgSize = int(viper.GetInt("peer.maxRecvMsgSize"))
+	}
+	maxSendMsgSize := comm.DefaultMaxSendMsgSize
+	if viper.IsSet("peer.maxSendMsgSize") {
+		maxSendMsgSize = int(viper.GetInt("peer.maxSendMsgSize"))
+	}
 	dialOpts = append(
 		dialOpts,
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(comm.MaxRecvMsgSize),
-			grpc.MaxCallSendMsgSize(comm.MaxSendMsgSize)))
+			grpc.MaxCallRecvMsgSize(maxRecvMsgSize),
+			grpc.MaxCallSendMsgSize(maxSendMsgSize)))
 	// set the keepalive options
 	kaOpts := comm.DefaultKeepaliveOptions
 	if viper.IsSet("peer.keepalive.client.interval") {

@@ -28,9 +28,10 @@ peer:
       timeout: 20s
   gossip:
     bootstrap: 127.0.0.1:{{ .PeerPort Peer "Listen" }}
+    endpoint: 127.0.0.1:{{ .PeerPort Peer "Listen" }}
+    externalEndpoint: 127.0.0.1:{{ .PeerPort Peer "Listen" }}
     useLeaderElection: true
     orgLeader: false
-    endpoint:
     maxBlockCountToStore: 100
     maxPropagationBurstLatency: 10ms
     maxPropagationBurstSize: 10
@@ -52,7 +53,6 @@ peer:
     aliveTimeInterval: 5s
     aliveExpirationTimeout: 25s
     reconnectInterval: 25s
-    externalEndpoint: 127.0.0.1:{{ .PeerPort Peer "Listen" }}
     election:
       startupGracePeriod: 15s
       membershipSampleInterval: 1s
@@ -73,7 +73,7 @@ peer:
     keepalive:
       minInterval: 60s
   tls:
-    enabled:  true
+    enabled:  {{ .TLSEnabled }}
     clientAuthRequired: false
     cert:
       file: {{ .PeerLocalTLSDir Peer }}/server.crt
@@ -146,7 +146,7 @@ vm:
       Memory: 2147483648
 
 chaincode:
-  builder: $(DOCKER_NS)/fabric-ccenv:$(ARCH)-$(PROJECT_VERSION)
+  builder: $(DOCKER_NS)/fabric-ccenv:$(TWO_DIGIT_VERSION)
   pull: false
   golang:
     runtime: $(BASE_DOCKER_NS)/fabric-baseos:$(ARCH)-$(BASE_VERSION)
@@ -191,7 +191,7 @@ ledger:
 operations:
   listenAddress: 127.0.0.1:{{ .PeerPort Peer "Operations" }}
   tls:
-    enabled: true
+    enabled: {{ .TLSEnabled }}
     cert:
       file: {{ .PeerLocalTLSDir Peer }}/server.crt
     key:

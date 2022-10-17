@@ -8,12 +8,11 @@ package txvalidator
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/fastfabric/cached"
 	"sync"
 
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	ledger2 "github.com/hyperledger/fabric/common/ledger"
-	"github.com/hyperledger/fabric/core/handlers/validation/api"
+	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
 	. "github.com/hyperledger/fabric/core/handlers/validation/api/capabilities"
 	. "github.com/hyperledger/fabric/core/handlers/validation/api/identities"
 	. "github.com/hyperledger/fabric/core/handlers/validation/api/state"
@@ -58,7 +57,7 @@ type Context struct {
 	VSCCName  string
 	Policy    []byte
 	Namespace string
-	Block     *cached.Block
+	Block     *common.Block
 }
 
 // String returns a string representation of this Context

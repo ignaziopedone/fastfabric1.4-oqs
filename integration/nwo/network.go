@@ -95,10 +95,11 @@ type OrdererCapabilities struct {
 }
 
 // Peer defines a peer instance, it's owning organization, and the list of
-// channels that the peer shoudl be joined to.
+// channels that the peer should be joined to.
 type Peer struct {
 	Name         string         `yaml:"name,omitempty"`
 	Organization string         `yaml:"organization,omitempty"`
+	DevMode      bool           `yaml:"devmode,omitempty"`
 	Channels     []*PeerChannel `yaml:"channels,omitempty"`
 }
 
@@ -142,6 +143,7 @@ type Network struct {
 	EventuallyTimeout time.Duration
 	MetricsProvider   string
 	StatsdEndpoint    string
+	TLSEnabled        bool
 
 	PortsByBrokerID  map[string]Ports
 	PortsByOrdererID map[string]Ports
@@ -186,6 +188,7 @@ func New(c *Config, rootDir string, client *docker.Client, startPort int, compon
 		Profiles:      c.Profiles,
 		Consortiums:   c.Consortiums,
 		Templates:     c.Templates,
+		TLSEnabled:    true, // set TLS enabled by default
 	}
 
 	if network.Templates == nil {
@@ -369,6 +372,28 @@ func (n *Network) userCryptoDir(org *Organization, nodeOrganizationType, user, c
 		"users",
 		fmt.Sprintf("%s@%s", user, org.Domain),
 		cryptoMaterialType,
+	)
+}
+
+// PeerOrgCADir returns the path to the folder containing the CA certificate(s) and/or
+// keys for the specified peer organization.
+func (n *Network) PeerOrgCADir(o *Organization) string {
+	return filepath.Join(
+		n.CryptoPath(),
+		"peerOrganizations",
+		o.Domain,
+		"ca",
+	)
+}
+
+// OrdererOrgCADir returns the path to the folder containing the CA certificate(s) and/or
+// keys for the specified orderer organization.
+func (n *Network) OrdererOrgCADir(o *Organization) string {
+	return filepath.Join(
+		n.CryptoPath(),
+		"ordererOrganizations",
+		o.Domain,
+		"ca",
 	)
 }
 
@@ -1025,11 +1050,12 @@ func (n *Network) OrdererGroupRunner() ifrit.Runner {
 
 // PeerRunner returns an ifrit.Runner for the specified peer. The runner can be
 // used to start and manage a peer process.
-func (n *Network) PeerRunner(p *Peer) *ginkgomon.Runner {
+func (n *Network) PeerRunner(p *Peer, env ...string) *ginkgomon.Runner {
 	cmd := n.peerCommand(
-		commands.NodeStart{PeerID: p.ID()},
+		commands.NodeStart{PeerID: p.ID(), DevMode: p.DevMode},
 		fmt.Sprintf("FABRIC_CFG_PATH=%s", n.PeerDir(p)),
 	)
+	cmd.Env = append(cmd.Env, env...)
 
 	return ginkgomon.New(ginkgomon.Config{
 		AnsiColorCode:     n.nextColor(),
@@ -1064,7 +1090,7 @@ func (n *Network) NetworkGroupRunner() ifrit.Runner {
 func (n *Network) peerCommand(command Command, env ...string) *exec.Cmd {
 	cmd := NewCommand(n.Components.Peer(), command)
 	cmd.Env = append(cmd.Env, env...)
-	if ConnectsToOrderer(command) {
+	if ConnectsToOrderer(command) && n.TLSEnabled {
 		cmd.Args = append(cmd.Args, "--tls")
 		cmd.Args = append(cmd.Args, "--cafile", n.CACertsBundlePath())
 	}

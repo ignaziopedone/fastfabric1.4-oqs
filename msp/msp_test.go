@@ -15,12 +15,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -45,11 +43,11 @@ FRBbKkDnSpaVcZgjns+mLdHV2JkF0gk=
 -----END X509 CRL-----`
 
 func TestMSPParsers(t *testing.T) {
-	_, _, _, err := localMsp.(*bccspmsp).getIdentityFromConf(nil)
+	_, _, err := localMsp.(*bccspmsp).getIdentityFromConf(nil)
 	assert.Error(t, err)
-	_, _, _, err = localMsp.(*bccspmsp).getIdentityFromConf([]byte("barf"))
+	_, _, err = localMsp.(*bccspmsp).getIdentityFromConf([]byte("barf"))
 	assert.Error(t, err)
-	_, _, _, err = localMsp.(*bccspmsp).getIdentityFromConf([]byte(notACert))
+	_, _, err = localMsp.(*bccspmsp).getIdentityFromConf([]byte(notACert))
 	assert.Error(t, err)
 
 	_, err = localMsp.(*bccspmsp).getSigningIdentityFromConf(nil)
@@ -513,6 +511,36 @@ func TestSignAndVerify(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestSignAndVerifyFailures(t *testing.T) {
+	msg := []byte("foo")
+
+	id, err := localMspBad.GetDefaultSigningIdentity()
+	if err != nil {
+		t.Fatalf("GetSigningIdentity should have succeeded")
+		return
+	}
+
+	hash := id.(*signingidentity).msp.cryptoConfig.SignatureHashFamily
+	id.(*signingidentity).msp.cryptoConfig.SignatureHashFamily = "barf"
+
+	sig, err := id.Sign(msg)
+	assert.Error(t, err)
+
+	id.(*signingidentity).msp.cryptoConfig.SignatureHashFamily = hash
+
+	sig, err = id.Sign(msg)
+	if err != nil {
+		t.Fatalf("Sign should have succeeded")
+		return
+	}
+
+	id.(*signingidentity).msp.cryptoConfig.SignatureHashFamily = "barf"
+
+	err = id.Verify(msg, sig)
+	assert.Error(t, err)
+
+	id.(*signingidentity).msp.cryptoConfig.SignatureHashFamily = hash
+}
 
 func TestSignAndVerifyOtherHash(t *testing.T) {
 	id, err := localMsp.GetDefaultSigningIdentity()
@@ -574,32 +602,6 @@ func TestSignAndVerify_longMessage(t *testing.T) {
 		t.Fatalf("The signature should be valid")
 		return
 	}
-}
-
-func TestSignAndVerifyHybrid(t *testing.T) {
-	id, err := localHybridMsp.GetDefaultSigningIdentity()
-	require.NoError(t, err)
-
-	serializedID, err := id.Serialize()
-	require.NoError(t, err)
-
-	idBack, err := localHybridMsp.DeserializeIdentity(serializedID)
-	require.NoError(t, err)
-
-	msg := []byte("foo")
-	sig, err := id.Sign(msg)
-	require.NoError(t, err)
-
-	err = id.Verify(msg, sig)
-	require.NoError(t, err)
-
-	err = idBack.Verify(msg, sig)
-	require.NoError(t, err)
-
-	err = id.Verify(msg[1:], sig)
-	assert.Error(t, err)
-	err = id.Verify(msg, sig[1:])
-	assert.Error(t, err)
 }
 
 func TestGetOU(t *testing.T) {
@@ -1100,16 +1102,9 @@ func TestIdentityPolicyPrincipalFails(t *testing.T) {
 }
 
 var conf *msp.MSPConfig
-// Note that the default keystore, set for the MSP in newBccspMsp(), can only be initialized once per program. Thus,
-// though multiple MSPs created in test can have different configs, they must all use the same keystore directory,
-// msp/keystore.
-// In the case of hybridMsp, the config is under sampleconfig/hybridmsp/,
-// but the keys have been copied into sampleconfig/msp/keystore. This should only be an issue in test.
-var hybridConf *msp.MSPConfig
 var localMsp MSP
 var localMspV11 MSP
 var localMspV13 MSP
-var localHybridMsp MSP
 
 // Required because deleting the cert or msp options from localMsp causes parallel tests to fail
 var localMspBad MSP
@@ -1119,23 +1114,11 @@ func TestMain(m *testing.M) {
 	var err error
 	mspDir, err := configtest.GetDevMspDir()
 	if err != nil {
-		fmt.Printf("Error getting DevMspDir: %s", err)
+		fmt.Printf("Errog getting DevMspDir: %s", err)
 		os.Exit(-1)
 	}
 
 	conf, err = GetLocalMspConfig(mspDir, nil, "SampleOrg")
-	if err != nil {
-		fmt.Printf("Setup should have succeeded, got err %s instead", err)
-		os.Exit(-1)
-	}
-
-	hybridMspDir, err := configtest.GetDevHybridMspDir()
-	if err != nil {
-		fmt.Printf("Error getting HybridDevMspDir: %s", err)
-		os.Exit(-1)
-	}
-
-	hybridConf, err = GetLocalMspConfig(hybridMspDir, nil, "SampleOrg")
 	if err != nil {
 		fmt.Printf("Setup should have succeeded, got err %s instead", err)
 		os.Exit(-1)
@@ -1165,12 +1148,6 @@ func TestMain(m *testing.M) {
 		os.Exit(-1)
 	}
 
-	localHybridMsp, err = newBccspMsp(MSPv1_0)
-	if err != nil {
-		fmt.Printf("Constructor for msp should have succeeded, got err %s instead", err)
-		os.Exit(-1)
-	}
-
 	err = localMspV11.Setup(conf)
 	if err != nil {
 		fmt.Printf("Setup for V1.1 msp should have succeeded, got err %s instead", err)
@@ -1192,15 +1169,6 @@ func TestMain(m *testing.M) {
 	err = localMspBad.Setup(conf)
 	if err != nil {
 		fmt.Printf("Setup for msp should have succeeded, got err %s instead", err)
-		os.Exit(-1)
-	}
-
-	err = localHybridMsp.Setup(hybridConf)
-	if err != nil {
-		if strings.Contains(err.Error(), "Could not find SKI") {
-			fmt.Printf("Failed to find key. Have you ensured that the hybrid msp keys are also in [%s]/keystore?", mspDir)
-		}
-		fmt.Printf("Setup for hybrid msp should have succeeded, got err %s instead", err)
 		os.Exit(-1)
 	}
 
@@ -1239,7 +1207,7 @@ func getIdentity(t *testing.T, path string) Identity {
 	pems, err := getPemMaterialFromDir(filepath.Join(mspDir, path))
 	assert.NoError(t, err)
 
-	id, _, _, err := localMsp.(*bccspmsp).getIdentityFromConf(pems[0])
+	id, _, err := localMsp.(*bccspmsp).getIdentityFromConf(pems[0])
 	assert.NoError(t, err)
 
 	return id

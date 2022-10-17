@@ -7,9 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package ledgerstorage
 
 import (
-	"github.com/hyperledger/fabric/fastfabric/cached"
-	"github.com/hyperledger/fabric/fastfabric/config"
-	fffsblkstorage "github.com/hyperledger/fabric/fastfabric/fsblkstorage"
 	"sync"
 	"sync/atomic"
 
@@ -53,16 +50,12 @@ var attrsToIndex = []blkstorage.IndexableAttr{
 // NewProvider returns the handle to the provider
 func NewProvider(metricsProvider metrics.Provider) *Provider {
 	// Initialize the block storage
-	var blockStoreProvider blkstorage.BlockStoreProvider
-	if !config.IsStorage {
-		blockStoreProvider = fffsblkstorage.NewProvider()
-	} else {
-		indexConfig := &blkstorage.IndexConfig{AttrsToIndex: attrsToIndex}
-		blockStoreProvider = fsblkstorage.NewProvider(
-			fsblkstorage.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
-			indexConfig,
-			metricsProvider)
-	}
+	indexConfig := &blkstorage.IndexConfig{AttrsToIndex: attrsToIndex}
+	blockStoreProvider := fsblkstorage.NewProvider(
+		fsblkstorage.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
+		indexConfig,
+		metricsProvider)
+
 	pvtStoreProvider := pvtdatastorage.NewProvider()
 	return &Provider{blockStoreProvider, pvtStoreProvider}
 }
@@ -76,10 +69,6 @@ func (p *Provider) Open(ledgerid string) (*Store, error) {
 	if blockStore, err = p.blkStoreProvider.OpenBlockStore(ledgerid); err != nil {
 		return nil, err
 	}
-	if config.IsStorage {
-		config.RegisterBlockStore(ledgerid, blockStore)
-	}
-
 	if pvtdataStore, err = p.pvtdataStoreProvider.OpenStore(ledgerid); err != nil {
 		return nil, err
 	}
@@ -153,7 +142,7 @@ func (s *Store) CommitWithPvtData(blockAndPvtdata *ledger.BlockAndPvtData) error
 		logger.Debugf("Skipping writing block [%d] to pvt block store as the store height is [%d]", blockNum, pvtBlkStoreHt)
 	}
 
-	if err := s.AddBlock(blockAndPvtdata.Block.Block); err != nil {
+	if err := s.AddBlock(blockAndPvtdata.Block); err != nil {
 		return err
 	}
 
@@ -218,7 +207,7 @@ func (s *Store) GetPvtDataAndBlockByNum(blockNum uint64, filter ledger.PvtNsColl
 	if pvtdata, err = s.getPvtDataByNumWithoutLock(blockNum, filter); err != nil {
 		return nil, err
 	}
-	return &ledger.BlockAndPvtData{Block: cached.WrapBlock(block), PvtData: constructPvtdataMap(pvtdata)}, nil
+	return &ledger.BlockAndPvtData{Block: block, PvtData: constructPvtdataMap(pvtdata)}, nil
 }
 
 // GetPvtDataByNum returns only the pvt data  corresponding to the given block number
